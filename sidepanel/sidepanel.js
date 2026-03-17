@@ -1117,10 +1117,13 @@
   async function sendViaServerSSE(userMessage, tabId, retryCount) {
     retryCount = retryCount || 0;
 
+    // Use taskCtx session only if this message is a follow-up from the background task
+    // (tabId matches taskCtx origin). Otherwise use the current tab's session.
+    const isBackgroundTaskFollowUp = taskCtx && tabId === taskCtx.originTab;
     const body = {
       message: userMessage,
       tabId: tabId,
-      sessionId: (taskCtx ? taskCtx.sessionId : chatSessionId) || undefined,
+      sessionId: (isBackgroundTaskFollowUp ? taskCtx.sessionId : chatSessionId) || undefined,
     };
 
     const controller = new AbortController();
@@ -1195,8 +1198,12 @@
           try {
             const event = JSON.parse(data);
             if (event.type === 'session') {
-              if (taskCtx) taskCtx.sessionId = event.sessionId;
-              else chatSessionId = event.sessionId;
+              // Assign session to the correct context based on which tab initiated this request
+              if (taskCtx && tabId === taskCtx.originTab) {
+                taskCtx.sessionId = event.sessionId;
+              } else {
+                chatSessionId = event.sessionId;
+              }
             } else if (event.type === 'delta') {
               fullResponse += event.text;
               onStreamDelta(event.text);
