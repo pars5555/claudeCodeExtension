@@ -1702,7 +1702,7 @@
       // Auto-fetch page DOM snapshot so AI gets context immediately
       try {
         const domRes = await sendCdpCommand(tid, 'Runtime.evaluate', {
-          expression: '(function(){ var t = document.title; var u = window.location.href; var text = (document.body && document.body.innerText || "").slice(0, 3000); return JSON.stringify({title: t, url: u, bodyText: text}); })()',
+          expression: '(function(){ var t = document.title; var u = window.location.href; var text = (document.body && document.body.innerText || "").slice(0, 1000); return JSON.stringify({title: t, url: u, bodyText: text}); })()',
           returnByValue: true,
           awaitPromise: false,
         });
