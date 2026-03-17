@@ -12,6 +12,7 @@
   let chatSessionId = null; // CLI session ID — server manages context
   let currentTabId = null;
   let currentTabInfo = { url: '', title: '' };
+  let _stepSendTime = 0; // Profiling: timestamp when SSE request was sent
 
   // ---------------------------------------------------------------------------
   // Auth State
@@ -799,6 +800,46 @@
     });
   }
 
+  // Collect rich page context via CDP (headings, links, forms, body text, cookies, storage)
+  async function collectRichPageContext(tabId) {
+    const ctx = {};
+    try {
+      // Body text + headings + forms + links count in one JS call
+      const res = await sendCdpCommand(tabId, 'Runtime.evaluate', {
+        expression: `(function(){
+          var h = []; document.querySelectorAll('h1,h2,h3').forEach(function(e){ h.push(e.tagName + ': ' + e.textContent.trim().substring(0,80)); });
+          var forms = document.querySelectorAll('form').length;
+          var inputs = []; document.querySelectorAll('input,textarea,select,[contenteditable="true"]').forEach(function(e){
+            var r = e.getBoundingClientRect();
+            if(r.width > 0 && r.height > 0) inputs.push({tag: e.tagName, type: e.type||e.getAttribute('contenteditable'), id: e.id, name: e.name, placeholder: e.placeholder||e.getAttribute('data-placeholder')||'', x: Math.round(r.x+r.width/2), y: Math.round(r.y+r.height/2)});
+          });
+          var links = document.querySelectorAll('a').length;
+          var imgs = document.querySelectorAll('img').length;
+          var sel = window.getSelection().toString().substring(0,500);
+          var body = (document.body && document.body.innerText || '').substring(0, 4000);
+          return JSON.stringify({headings: h.slice(0,15), forms: forms, inputs: inputs.slice(0,15), links: links, images: imgs, selectedText: sel, bodyText: body});
+        })()`,
+        returnByValue: true, awaitPromise: false,
+      });
+      if (res.status === 'ok' && res.result?.result?.value) {
+        try { Object.assign(ctx, JSON.parse(res.result.result.value)); } catch (e) {}
+      }
+    } catch (e) { /* non-critical */ }
+
+    try {
+      // Cookies
+      const cookieRes = await sendCdpCommand(tabId, 'Network.getCookies', {});
+      if (cookieRes.status === 'ok' && cookieRes.result?.cookies) {
+        ctx.cookies = cookieRes.result.cookies.slice(0, 10).map(function(c) {
+          return c.name + '=' + (c.value || '').substring(0, 30) + (c.value?.length > 30 ? '...' : '');
+        });
+        ctx.cookieCount = cookieRes.result.cookies.length;
+      }
+    } catch (e) { /* non-critical */ }
+
+    return ctx;
+  }
+
   // ---------------------------------------------------------------------------
   // Helper: request command data from content script
   // ---------------------------------------------------------------------------
@@ -997,9 +1038,10 @@
       pageHeader = '[Page: ' + pageCtx.url + ' | Title: ' + pageCtx.title + ' | Tab: ' + pageCtx.tabId + ']\n';
     }
 
-    // On first message of a session (no session for this tab), auto-include all browser tabs
+    // On first message of a session, auto-include browser tabs + rich page context
     const isFirstMessage = !(taskCtx ? taskCtx.sessionId : chatSessionId);
     let tabsContext = '';
+    let richContext = '';
     if (isFirstMessage) {
       try {
         const allTabs = await new Promise(resolve => {
@@ -1008,10 +1050,25 @@
         const tabList = allTabs.map(t => '  ' + t.id + ' | ' + (t.title || '').substring(0, 60) + ' | ' + (t.url || '')).join('\n');
         tabsContext = '\n[Browser Tabs]\n' + tabList + '\n';
       } catch (e) { /* non-critical */ }
+
+      // Collect rich page context via CDP
+      try {
+        const rich = await collectRichPageContext(tabId);
+        const parts = [];
+        if (rich.headings && rich.headings.length > 0) parts.push('Headings: ' + rich.headings.join(', '));
+        if (rich.inputs && rich.inputs.length > 0) parts.push('Inputs: ' + JSON.stringify(rich.inputs));
+        if (rich.forms) parts.push('Forms: ' + rich.forms);
+        if (rich.links) parts.push('Links: ' + rich.links);
+        if (rich.images) parts.push('Images: ' + rich.images);
+        if (rich.cookies && rich.cookies.length > 0) parts.push('Cookies (' + rich.cookieCount + '): ' + rich.cookies.join('; '));
+        if (rich.selectedText) parts.push('Selected text: ' + rich.selectedText);
+        if (rich.bodyText) parts.push('Page text (first 4000 chars):\n' + rich.bodyText);
+        if (parts.length > 0) richContext = '\n[Page Context]\n' + parts.join('\n') + '\n';
+      } catch (e) { /* non-critical */ }
     }
 
     // Build conversation entry with attachments
-    const fullUserContent = pageHeader + userMessage + tabsContext + (extraContext ? '\n\n[Context: ' + extraContext + ']' : '');
+    const fullUserContent = pageHeader + userMessage + tabsContext + richContext + (extraContext ? '\n\n[Context: ' + extraContext + ']' : '');
 
     const imageAttachments = atts.filter(a => a.isImage);
     const textAttachments = atts.filter(a => !a.isImage);
@@ -1046,6 +1103,7 @@
     taskTabId = tabId;
 
     // Send via server SSE — only message + tabId, server manages context via CLI sessions
+    _stepSendTime = Date.now();
     sendViaServerSSE(historyContent, tabId);
 
     isStreaming = true;
@@ -1443,8 +1501,13 @@
     // Auto-execute CDP/JS commands from AI response
     // Use taskTabId (locked at submission time) so tab switches don't break the loop
     const execTabId = taskTabId || currentTabId;
+    // Profiling: AI response time = time from SSE send to stream end
+    const aiResponseMs = _stepSendTime ? (Date.now() - _stepSendTime) : 0;
+
     if (fullText && !cancelled && execTabId) {
+      const execStart = Date.now();
       executeCdpFromResponse(fullText, execTabId).then(cdpResults => {
+        const execMs = Date.now() - execStart;
         if (autoExecCancelled) {
           addSystemMessage('Stopped by user.');
           finishTask();
@@ -1458,9 +1521,13 @@
             return;
           }
 
+          // Profiling summary for this step
+          const stepTotalMs = aiResponseMs + execMs;
+          const profile = 'AI: ' + (aiResponseMs / 1000).toFixed(1) + 's | Exec: ' + (execMs / 1000).toFixed(1) + 's | Total: ' + (stepTotalMs / 1000).toFixed(1) + 's';
+
           // Show execution results in chat so user can see what was sent to AI
           const chatResults = formatCdpResultsForChat(cdpResults);
-          addSystemMessage('Step ' + autoFollowUpCount + ' executed — ' + cdpResults.length + ' command(s)' + chatResults);
+          addSystemMessage('Step ' + autoFollowUpCount + ' executed — ' + cdpResults.length + ' command(s) — ' + profile + chatResults);
 
           // Update conversation history: append results to assistant message
           const curHist = getTaskHistory();
@@ -1473,12 +1540,15 @@
 
           // Send results back to AI for next step (new assistant bubble will be created)
           const followUpPrompt = formatCdpResultsAsPrompt(cdpResults);
-          curHist.push({ role: 'user', content: followUpPrompt });
+          // Include timing in follow-up so server can log it
+          followUpPrompt._profile = { step: autoFollowUpCount, aiMs: aiResponseMs, execMs: execMs, totalMs: stepTotalMs };
+          curHist.push({ role: 'user', content: typeof followUpPrompt === 'string' ? followUpPrompt : followUpPrompt });
 
           isStreaming = true;
           if (taskCtx) taskCtx.isStreaming = true;
           updateSendButton();
-          sendViaServerSSE(followUpPrompt, execTabId);
+          _stepSendTime = Date.now(); // Mark when we send next request
+          sendViaServerSSE(typeof followUpPrompt === 'string' ? followUpPrompt : followUpPrompt, execTabId);
         } else {
           // No CDP blocks — task is done
           finishTask();
