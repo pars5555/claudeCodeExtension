@@ -1031,44 +1031,8 @@
       }
     }
 
-    // Prepend page context so AI always knows which page it's on
-    const pageCtx = await getPageContext(tabId);
-    let pageHeader = '';
-    if (pageCtx) {
-      pageHeader = '[Page: ' + pageCtx.url + ' | Title: ' + pageCtx.title + ' | Tab: ' + pageCtx.tabId + ']\n';
-    }
-
-    // On first message of a session, auto-include browser tabs + rich page context
-    const isFirstMessage = !(taskCtx ? taskCtx.sessionId : chatSessionId);
-    let tabsContext = '';
-    let richContext = '';
-    if (isFirstMessage) {
-      try {
-        const allTabs = await new Promise(resolve => {
-          chrome.tabs.query({}, tabs => resolve(tabs || []));
-        });
-        const tabList = allTabs.map(t => '  ' + t.id + ' | ' + (t.title || '').substring(0, 60) + ' | ' + (t.url || '')).join('\n');
-        tabsContext = '\n[Browser Tabs]\n' + tabList + '\n';
-      } catch (e) { /* non-critical */ }
-
-      // Collect rich page context via CDP
-      try {
-        const rich = await collectRichPageContext(tabId);
-        const parts = [];
-        if (rich.headings && rich.headings.length > 0) parts.push('Headings: ' + rich.headings.join(', '));
-        if (rich.inputs && rich.inputs.length > 0) parts.push('Inputs: ' + JSON.stringify(rich.inputs));
-        if (rich.forms) parts.push('Forms: ' + rich.forms);
-        if (rich.links) parts.push('Links: ' + rich.links);
-        if (rich.images) parts.push('Images: ' + rich.images);
-        if (rich.cookies && rich.cookies.length > 0) parts.push('Cookies (' + rich.cookieCount + '): ' + rich.cookies.join('; '));
-        if (rich.selectedText) parts.push('Selected text: ' + rich.selectedText);
-        if (rich.bodyText) parts.push('Page text (first 4000 chars):\n' + rich.bodyText);
-        if (parts.length > 0) richContext = '\n[Page Context]\n' + parts.join('\n') + '\n';
-      } catch (e) { /* non-critical */ }
-    }
-
-    // Build conversation entry with attachments
-    const fullUserContent = pageHeader + userMessage + tabsContext + richContext + (extraContext ? '\n\n[Context: ' + extraContext + ']' : '');
+    // Build conversation entry — bare user message only (matches old system behavior)
+    const fullUserContent = userMessage + (extraContext ? '\n\n[Context: ' + extraContext + ']' : '');
 
     const imageAttachments = atts.filter(a => a.isImage);
     const textAttachments = atts.filter(a => !a.isImage);
