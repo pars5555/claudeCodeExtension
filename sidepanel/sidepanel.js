@@ -1031,15 +1031,8 @@
       }
     }
 
-    // Prepend current page URL + title (matches old system's pageContext in system prompt)
-    const pageCtx = await getPageContext(tabId);
-    let pageHeader = '';
-    if (pageCtx) {
-      pageHeader = '[Page: ' + pageCtx.url + ' | Title: ' + pageCtx.title + ' | Tab: ' + pageCtx.tabId + ']\n';
-    }
-
-    // Build conversation entry — page header + bare user message (no tabs, no body text, no cookies)
-    const fullUserContent = pageHeader + userMessage + (extraContext ? '\n\n[Context: ' + extraContext + ']' : '');
+    // Build conversation entry — bare user message (like old system)
+    const fullUserContent = userMessage + (extraContext ? '\n\n[Context: ' + extraContext + ']' : '');
 
     const imageAttachments = atts.filter(a => a.isImage);
     const textAttachments = atts.filter(a => !a.isImage);
@@ -1073,9 +1066,21 @@
     // Lock task to this tab — all follow-ups will target this tab even if user switches
     taskTabId = tabId;
 
+    // On first message (new session), collect rich page context for system prompt
+    // Old system did this via content.js gatherPageContext() + background.js prefetchCdpData()
+    const isFirstMessage = !(taskCtx ? taskCtx.sessionId : chatSessionId);
+    let pageContext = null;
+    if (isFirstMessage) {
+      try {
+        const pageCtx = await getPageContext(tabId);
+        const rich = await collectRichPageContext(tabId);
+        pageContext = Object.assign({}, pageCtx || {}, rich || {});
+      } catch (e) { /* non-critical */ }
+    }
+
     // Send via server SSE — only message + tabId, server manages context via CLI sessions
     _stepSendTime = Date.now();
-    sendViaServerSSE(historyContent, tabId);
+    sendViaServerSSE(historyContent, tabId, 0, pageContext);
 
     isStreaming = true;
     updateSendButton();
@@ -1085,17 +1090,18 @@
   // ---------------------------------------------------------------------------
   // Server SSE Chat — direct fetch to /api/chat with streaming
   // ---------------------------------------------------------------------------
-  async function sendViaServerSSE(userMessage, tabId, retryCount) {
+  async function sendViaServerSSE(userMessage, tabId, retryCount, pageContext) {
     retryCount = retryCount || 0;
 
     // Use taskCtx session only if this message is a follow-up from the background task
-    // (tabId matches taskCtx origin). Otherwise use the current tab's session.
     const isBackgroundTaskFollowUp = taskCtx && tabId === taskCtx.originTab;
     const body = {
       message: userMessage,
       tabId: tabId,
       sessionId: (isBackgroundTaskFollowUp ? taskCtx.sessionId : chatSessionId) || undefined,
     };
+    // Send page context on first message so server can embed it in system prompt
+    if (pageContext) body.pageContext = pageContext;
 
     const controller = new AbortController();
     currentAbortController = controller;
