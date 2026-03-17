@@ -1538,17 +1538,15 @@
             }
           }
 
-          // Send results back to AI for next step (new assistant bubble will be created)
+          // Send results back to AI for next step
           const followUpPrompt = formatCdpResultsAsPrompt(cdpResults);
-          // Include timing in follow-up so server can log it
-          followUpPrompt._profile = { step: autoFollowUpCount, aiMs: aiResponseMs, execMs: execMs, totalMs: stepTotalMs };
-          curHist.push({ role: 'user', content: typeof followUpPrompt === 'string' ? followUpPrompt : followUpPrompt });
+          curHist.push({ role: 'user', content: followUpPrompt });
 
           isStreaming = true;
           if (taskCtx) taskCtx.isStreaming = true;
           updateSendButton();
-          _stepSendTime = Date.now(); // Mark when we send next request
-          sendViaServerSSE(typeof followUpPrompt === 'string' ? followUpPrompt : followUpPrompt, execTabId);
+          _stepSendTime = Date.now();
+          sendViaServerSSE(followUpPrompt, execTabId);
         } else {
           // No CDP blocks — task is done
           finishTask();
