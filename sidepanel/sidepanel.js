@@ -1599,12 +1599,10 @@
 
       } else if (blockType === 'js') {
         // ── js block: read DOM via Runtime.evaluate ──
+        // Match old behavior: just replace const/let with var, NO IIFE wrapping
+        // IIFE wrapping breaks return values (last expression not returned without explicit return)
         try {
           let safeCode = rawCmd.replace(/\b(const|let)\s+/g, 'var ');
-          if ((safeCode.includes(';') || safeCode.includes('\n') || safeCode.includes('await ')) && !safeCode.startsWith('(function') && !safeCode.startsWith('(async')) {
-            var needsAsync = safeCode.includes('await ');
-            safeCode = (needsAsync ? '(async function(){' : '(function(){') + safeCode + '})()';
-          }
           const res = await sendCdpCommand(tabId, 'Runtime.evaluate', {
             expression: safeCode,
             returnByValue: true,
@@ -1645,13 +1643,9 @@
           try {
             cmd = JSON.parse(rawCmd);
           } catch (jsonErr) {
-            // Recovery: bare JS in cdp block
+            // Recovery: bare JS in cdp block — just var-replace, no IIFE
             if (/^(await\s|document\.|window\.|var |let |const |function |\(|Array\.)/.test(rawCmd)) {
-              var hasAwait = rawCmd.includes('await ');
               let safeExpr = rawCmd.replace(/\b(const|let)\s+/g, 'var ');
-              if ((safeExpr.includes(';') || safeExpr.includes('\n') || hasAwait) && !safeExpr.startsWith('(function') && !safeExpr.startsWith('(async')) {
-                safeExpr = (hasAwait ? '(async function(){' : '(function(){') + safeExpr + '})()';
-              }
               const res = await sendCdpCommand(tabId, 'Runtime.evaluate', { expression: safeExpr, returnByValue: true, awaitPromise: true });
               if (res.status === 'ok' && !res.result?.exceptionDetails) {
                 const val = res.result?.result?.value;
@@ -1686,11 +1680,7 @@
           if (cmd.method) {
             const targetTab = cmd.tabId || tabId;
             if (cmd.method === 'Runtime.evaluate' && cmd.params?.expression) {
-              let expr = cmd.params.expression.replace(/\b(const|let)\s+/g, 'var ');
-              if ((expr.includes(';') || expr.includes('\n') || expr.includes('await ')) && !expr.startsWith('(function') && !expr.startsWith('(async')) {
-                expr = (expr.includes('await ') ? '(async function(){' : '(function(){') + expr + '})()';
-              }
-              cmd.params.expression = expr;
+              cmd.params.expression = cmd.params.expression.replace(/\b(const|let)\s+/g, 'var ');
             }
             const res = await sendCdpCommand(targetTab, cmd.method, cmd.params || {});
             if (res.status === 'ok') {
