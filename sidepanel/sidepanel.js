@@ -1100,6 +1100,17 @@
     updateContextMeter();
   }
 
+  // Log execution results to server DB (non-blocking)
+  function logExecToServer(tabId, content, metadata) {
+    const isBackgroundTaskFollowUp = taskCtx && tabId === taskCtx.originTab;
+    const sid = (isBackgroundTaskFollowUp ? taskCtx.sessionId : chatSessionId) || undefined;
+    fetch(SERVER_URL + '/api/chat/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ sessionId: sid, tabId: tabId, content: content, metadata: metadata }),
+    }).catch(function() {}); // fire and forget
+  }
+
   // ---------------------------------------------------------------------------
   // Server SSE Chat — direct fetch to /api/chat with streaming
   // ---------------------------------------------------------------------------
@@ -1538,6 +1549,15 @@
           // Send results back to AI for next step
           const followUpPrompt = formatCdpResultsAsPrompt(cdpResults);
           curHist.push({ role: 'user', content: followUpPrompt });
+
+          // Log exec results to server DB
+          logExecToServer(execTabId, followUpPrompt, {
+            step: autoFollowUpCount,
+            aiMs: aiResponseMs,
+            execMs: execMs,
+            totalMs: stepTotalMs,
+            commandCount: cdpResults.length,
+          });
 
           isStreaming = true;
           if (taskCtx) taskCtx.isStreaming = true;
