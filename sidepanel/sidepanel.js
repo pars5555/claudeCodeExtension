@@ -873,24 +873,29 @@
   // Clear chat
   // ---------------------------------------------------------------------------
   function clearChat() {
+    // Kill persistent CLI process on server
+    var sidToKill = taskCtx ? taskCtx.sessionId : chatSessionId;
+    if (sidToKill) {
+      fetch(SERVER_URL + '/api/chat/kill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ sessionId: sidToKill }),
+      }).catch(function() {});
+    }
+
     conversationHistory = [];
-    chatSessionId = null; // Reset CLI session — next message starts fresh
+    chatSessionId = null;
     messagesEl.innerHTML = getWelcomeHTML();
-    // Clear stored chat for this tab only
     if (currentTabId) tabChats.delete(currentTabId);
-    // Clear background task if it was for this tab
     if (taskCtx && taskCtx.originTab === currentTabId) {
       if (taskCtx.container) taskCtx.container.remove();
       taskCtx = null;
     }
-    // Reset task tab tracking
     taskTabId = null;
     isStreaming = false;
     currentStreamText = '';
-    // Clear pending attachments
     pendingAttachments = [];
     renderAttachments();
-    // Reset context meter
     updateContextMeter();
     chrome.runtime.sendMessage({ type: 'CLEAR_SESSION', tabId: currentTabId }, () => {
       if (chrome.runtime.lastError) { /* ignore */ }
