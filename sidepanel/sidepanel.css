@@ -212,6 +212,25 @@ body {
   align-self: flex-start;
 }
 
+.claude-message-label {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 3px;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.claude-message-user .claude-message-label { color: #a78bfa; text-align: right; }
+.claude-message-assistant .claude-message-label { color: #7dd3fc; }
+
+.claude-message-time {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+  padding: 0 2px;
+}
+.claude-message-user .claude-message-time { text-align: right; }
+
 .claude-message-bubble {
   padding: 10px 14px;
   border-radius: 14px;

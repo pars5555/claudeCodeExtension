@@ -1851,6 +1851,13 @@
 
     wrapper.appendChild(bubble);
 
+    // Timestamp
+    var timeEl = document.createElement('div');
+    timeEl.className = 'claude-message-time';
+    var now = new Date();
+    timeEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    wrapper.appendChild(timeEl);
+
     if (role === 'assistant') {
       // Add copy button for entire message
       const actions = document.createElement('div');
