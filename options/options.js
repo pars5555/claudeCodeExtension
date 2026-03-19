@@ -8,7 +8,7 @@
   const DEFAULT_SERVER_URL = 'https://webai.pc.am';
 
   const DEFAULTS = {
-    model: 'claude-sonnet-4-6',
+    model: 'claude-opus-4-6',
     theme: 'dark',
   };
 
