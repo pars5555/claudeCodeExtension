@@ -2,7 +2,7 @@
 
 Chrome MV3 extension that puts Claude AI in your browser's side panel. Claude can see page content, execute JavaScript, control the browser via Chrome DevTools Protocol (CDP), and automate multi-step tasks.
 
-Connects to the [claude-server](../claude-server/) backend (webai.pc.am) for authentication, billing, system prompt, and Claude Code CLI proxying.
+Connects to the [webai-server](../webai-server/) backend (webai.pc.am) for authentication, billing, system prompt, and Claude Code CLI proxying.
 
 ## Architecture
 
@@ -155,14 +155,14 @@ When `createTab` or `switchTab` completes, the extension auto-fetches a DOM snap
 1. Open Chrome -> `chrome://extensions/`
 2. Enable "Developer mode" (top right toggle)
 3. Click "Load unpacked"
-4. Select this directory (`claudeCodeExtension/`)
+4. Select this directory (`webai-ext/`)
 
 ### 2. API Server
 
 The extension connects to `https://webai.pc.am` by default. For local development:
 
 ```bash
-cd ../claude-server
+cd ../webai-server
 cp .env.example .env
 # Edit .env: set MySQL credentials, JWT_SECRET, ENCRYPTION_KEY, ANTHROPIC_API_KEY
 npm install
@@ -204,7 +204,7 @@ Then change server URL in extension Options to `http://localhost:3466`.
 ## File Structure
 
 ```
-claudeCodeExtension/
+webai-ext/
 +-- manifest.json               # MV3 config, permissions, side panel
 +-- background/
 |   +-- background.js           # Service worker: CDP, message router, OAuth
@@ -320,4 +320,4 @@ Extension handles locally (background.js):
 
 ## Related
 
-- [claude-server](../claude-server/) -- Backend API server (authentication, billing, admin panel, Claude Code CLI proxy)
+- [webai-server](../webai-server/) -- Backend API server (authentication, billing, admin panel, Claude Code CLI proxy)
