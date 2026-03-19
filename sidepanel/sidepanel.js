@@ -326,11 +326,22 @@
     } catch (e) { /* ignore */ }
   }
 
-  // Save model on change — persist to server and local storage
+  // Save model on change — clear chat and start new session with new model
+  let _prevModel = modelSelect.value;
   modelSelect.addEventListener('change', async () => {
     const model = modelSelect.value;
+    const hasActiveChat = chatSessionId || (taskCtx && taskCtx.sessionId);
+
+    if (hasActiveChat) {
+      if (!confirm('Changing model will clear the current chat. Continue?')) {
+        modelSelect.value = _prevModel;
+        return;
+      }
+      clearChat();
+    }
+
+    _prevModel = model;
     chrome.storage.sync.set({ model });
-    // Save to server so it's used for all chats
     try {
       await fetch(SERVER_URL + '/api/user/settings/model', {
         method: 'PUT',
