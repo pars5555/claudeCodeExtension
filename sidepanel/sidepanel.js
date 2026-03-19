@@ -1204,6 +1204,11 @@
               onStreamDelta(event.text);
             } else if (event.type === 'done' && !streamEnded) {
               const finalText = event.fullText || fullResponse;
+              // Update balance from server
+              if (event.balance !== undefined && event.balance !== null && userBalanceEl) {
+                userBalanceEl.textContent = '$' + event.balance.toFixed(2);
+                userBalanceEl.style.display = 'inline-block';
+              }
               onStreamEnd(finalText, false);
               streamEnded = true;
             } else if (event.type === 'error') {
