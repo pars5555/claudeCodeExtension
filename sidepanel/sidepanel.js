@@ -206,7 +206,6 @@
   // SVG Icons (inline)
   // ---------------------------------------------------------------------------
   const ICONS = {
-    claude: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 8.5c0 0-1.5-1-3.5-1s-3.5 1.5-3.5 3.5c0 1.5 1 2.5 2 3l1.5.5c1 .4 1.5 1 1.5 2 0 1.2-1 2-2.5 2s-3-.8-3.5-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
     error: `<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>`,
     highlight: `<svg viewBox="0 0 24 24"><path d="M6 14l3 3v5h6v-5l3-3V9H6v5zm5-12h2v3h-2V2zM3.5 5.88l1.41-1.41 2.12 2.12L5.62 8 3.5 5.88zm13.46.71l2.12-2.12 1.41 1.41L18.38 8l-1.42-1.41z"/></svg>`
   };
@@ -268,7 +267,7 @@
   function getWelcomeHTML() {
     return `
       <div class="claude-welcome">
-        <div class="claude-welcome-icon">${ICONS.claude}</div>
+        <div class="claude-welcome-icon"><img src="../icons/icon128.png" width="32" height="32" alt="WebAI"></div>
         <h3>AI Web Assistant</h3>
         <p>Ask anything — Claude has full access to this page.</p>
       </div>`;

@@ -51,10 +51,10 @@ body {
   box-shadow: 0 4px 16px rgba(124, 58, 237, 0.35);
 }
 
-.header-logo svg {
-  width: 26px;
-  height: 26px;
-  fill: white;
+.header-logo img {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
 }
 
 .options-header h1 {
