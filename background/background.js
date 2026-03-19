@@ -271,6 +271,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       return true;
 
+    case 'EXT_COMMAND':
+      handleExtCommand(message, sendResponse);
+      return true;
+
     case 'OAUTH_FLOW':
       handleOAuthFlow(message, sendResponse);
       return true;
@@ -471,6 +475,100 @@ async function handleSetPageEnabled(message, sendResponse) {
   } catch (error) {
     sendResponse({ status: 'error', error: error.message });
   }
+}
+
+// ─── Extension Commands (from AI ```ext blocks) ────────────────────────────────
+
+function handleExtCommand(message, sendResponse) {
+  const action = message.action;
+  xlog('DEBUG', 'EXT_CMD', 'action:', action);
+
+  // Normalize action name — AI hallucinates variants
+  const normalized = action.toLowerCase().replace(/[_\-\s]/g, '');
+
+  // List tabs
+  if (['listtabs', 'gettabs', 'tabs', 'getalltabs', 'tablist'].includes(normalized)) {
+    chrome.tabs.query({}, (tabs) => {
+      sendResponse({
+        tabs: tabs.map(t => ({
+          tabId: t.id,
+          url: t.url || '',
+          title: t.title || '',
+          active: t.active,
+          windowId: t.windowId,
+        }))
+      });
+    });
+    return;
+  }
+
+  // Switch/activate tab
+  if (['switchtab', 'activatetab', 'focustab', 'activate', 'focus', 'selecttab'].includes(normalized)) {
+    const tid = message.tabId || message.id;
+    if (!tid) { sendResponse({ error: 'No tabId provided' }); return; }
+    chrome.tabs.update(tid, { active: true }, (tab) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ error: chrome.runtime.lastError.message });
+      } else {
+        chrome.windows.update(tab.windowId, { focused: true }, () => {
+          sendResponse({ tabId: tab.id, url: tab.url, title: tab.title });
+        });
+      }
+    });
+    return;
+  }
+
+  // Create tab
+  if (['createtab', 'newtab', 'opentab', 'open'].includes(normalized)) {
+    chrome.tabs.create({ url: message.url || 'about:blank', active: message.active !== false }, (tab) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ tabId: tab.id, url: tab.url, title: tab.title });
+      }
+    });
+    return;
+  }
+
+  // Close tab
+  if (['closetab', 'removetab', 'close'].includes(normalized)) {
+    const tid = message.tabId || message.id;
+    if (!tid) { sendResponse({ error: 'No tabId provided' }); return; }
+    chrome.tabs.remove(tid, () => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ ok: true });
+      }
+    });
+    return;
+  }
+
+  // Screenshot — AI sometimes puts this in ext block instead of cdp
+  if (['screenshot', 'takescreenshot', 'capturescreenshot', 'pagecapturescreenshot'].includes(normalized)) {
+    const tid = message.tabId || message.id;
+    if (!tid) { sendResponse({ error: 'No tabId provided for screenshot' }); return; }
+    (async () => {
+      try {
+        if (!attachedTabs.has(tid)) {
+          await chrome.debugger.attach({ tabId: tid }, '1.3');
+          attachedTabs.add(tid);
+        }
+        const result = await chrome.debugger.sendCommand({ tabId: tid }, 'Page.captureScreenshot', message.params || { format: 'jpeg', quality: 60 });
+        sendResponse({ data: result.data, note: 'Screenshot captured. Prefer DOM reading for text content.' });
+      } catch (e) {
+        sendResponse({ error: e.message || 'Screenshot failed' });
+      }
+    })();
+    return;
+  }
+
+  // Help — return valid actions so AI can self-correct with format examples
+  sendResponse({
+    error: 'Unknown ext action: "' + action + '". ext blocks are ONLY for tab management.',
+    validExtActions: ['listTabs', 'switchTab {tabId}', 'createTab {url}', 'closeTab {tabId}', 'screenshot {tabId}'],
+    hint: 'To run JavaScript, use a ```js block. To use CDP commands (click, type, evaluate, navigate), use a ```cdp block with format: {"method": "Runtime.evaluate", "params": {"expression": "..."}}. To click: {"method": "Input.dispatchMouseEvent", "params": {"type": "mousePressed", "x": 100, "y": 200, "button": "left", "clickCount": 1}}'
+  });
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────

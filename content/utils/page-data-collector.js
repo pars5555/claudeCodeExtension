@@ -268,57 +268,6 @@
           referrerPolicy: referrerPolicy
         };
       }, { protocol: location.protocol, isSecure: false, csp: '', referrerPolicy: '' });
-    },
-
-    /**
-     * Query registered service workers. Returns a Promise that resolves to an array.
-     */
-    getServiceWorkers: function () {
-      try {
-        if (!navigator.serviceWorker || !navigator.serviceWorker.getRegistrations) {
-          return Promise.resolve([]);
-        }
-        return navigator.serviceWorker.getRegistrations().then(function (registrations) {
-          return registrations.map(function (reg) {
-            return {
-              scope: reg.scope || '',
-              active: !!(reg.active)
-            };
-          });
-        }).catch(function () {
-          return [];
-        });
-      } catch (_e) {
-        return Promise.resolve([]);
-      }
-    },
-
-    /**
-     * Master method: collect all page data into a single object.
-     * Returns a Promise (because getServiceWorkers is async).
-     */
-    getFullPageData: function () {
-      var self = this;
-      var data = {
-        url: location.href,
-        title: document.title,
-        timestamp: new Date().toISOString(),
-        cookies: self.getCookiesSummary(),
-        localStorage: self.getLocalStorage(),
-        sessionStorage: self.getSessionStorage(),
-        performance: self.getPerformanceData(),
-        network: self.getNetworkInfo(),
-        pageSources: self.getPageSources(),
-        security: self.getSecurityInfo(),
-        serviceWorkers: []
-      };
-
-      return self.getServiceWorkers().then(function (sw) {
-        data.serviceWorkers = sw;
-        return data;
-      }).catch(function () {
-        return data;
-      });
     }
   };
 })();

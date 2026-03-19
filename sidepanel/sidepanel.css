@@ -991,33 +991,6 @@ body {
   margin: 0 0 18px;
 }
 
-/* Auth Form Fields (kept for potential future use) */
-.claude-auth-field {
-  margin-bottom: 10px;
-}
-
-.claude-auth-field input {
-  width: 100%;
-  padding: 10px 14px;
-  background: #252745;
-  border: 1px solid rgba(124, 58, 237, 0.2);
-  border-radius: 8px;
-  color: #e2e8f0;
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.2s;
-  box-sizing: border-box;
-}
-
-.claude-auth-field input::placeholder {
-  color: #475569;
-}
-
-.claude-auth-field input:focus {
-  border-color: rgba(124, 58, 237, 0.5);
-}
-
 /* Auth Buttons */
 .claude-auth-btn {
   display: flex;
@@ -1038,17 +1011,6 @@ body {
 .claude-auth-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.claude-auth-btn-primary {
-  background: linear-gradient(135deg, #7C3AED, #6D28D9);
-  color: white;
-}
-
-.claude-auth-btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.35);
 }
 
 .claude-auth-btn-google {

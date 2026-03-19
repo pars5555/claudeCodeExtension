@@ -76,54 +76,6 @@
       };
     },
 
-    getElementInfo(selector) {
-      try {
-        const el = document.querySelector(selector);
-        if (!el) return { error: `No element found for selector: ${selector}` };
-
-        const rect = el.getBoundingClientRect();
-        const styles = window.getComputedStyle(el);
-
-        const attributes = {};
-        for (const attr of el.attributes) {
-          attributes[attr.name] = attr.value.substring(0, 200);
-        }
-
-        return {
-          tagName: el.tagName.toLowerCase(),
-          id: el.id,
-          className: el.className,
-          attributes,
-          textContent: el.textContent.trim().substring(0, 500),
-          innerHTML: el.innerHTML.substring(0, 1000),
-          boundingRect: {
-            top: Math.round(rect.top),
-            left: Math.round(rect.left),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height)
-          },
-          isVisible: rect.width > 0 && rect.height > 0 && styles.display !== 'none' && styles.visibility !== 'hidden',
-          childElementCount: el.childElementCount,
-          parentSelector: getUniqueSelector(el.parentElement),
-          computedStyles: {
-            display: styles.display,
-            position: styles.position,
-            color: styles.color,
-            backgroundColor: styles.backgroundColor,
-            fontSize: styles.fontSize,
-            fontFamily: styles.fontFamily,
-            margin: styles.margin,
-            padding: styles.padding,
-            border: styles.border,
-            zIndex: styles.zIndex,
-            overflow: styles.overflow
-          }
-        };
-      } catch (e) {
-        return { error: e.message };
-      }
-    },
-
     getConsoleErrors() {
       return capturedErrors.slice();
     },
@@ -309,11 +261,6 @@
       } catch(e) {
         return { error: e.message };
       }
-    },
-
-    getBodyText(maxLength = 3000) {
-      const text = document.body?.innerText || '';
-      return text.substring(0, maxLength);
     }
   };
 
@@ -326,29 +273,6 @@
       }
     }
     return text.trim();
-  }
-
-  // Helper: generate unique selector for an element
-  function getUniqueSelector(el) {
-    if (!el || el === document.body) return 'body';
-    if (el.id) return `#${el.id}`;
-
-    let selector = el.tagName.toLowerCase();
-    if (el.className && typeof el.className === 'string') {
-      const cls = el.className.trim().split(/\s+/)[0];
-      if (cls) selector += `.${cls}`;
-    }
-
-    const parent = el.parentElement;
-    if (parent) {
-      const siblings = Array.from(parent.children).filter(c => c.tagName === el.tagName);
-      if (siblings.length > 1) {
-        const index = siblings.indexOf(el) + 1;
-        selector += `:nth-of-type(${index})`;
-      }
-    }
-
-    return selector;
   }
 
 })();
