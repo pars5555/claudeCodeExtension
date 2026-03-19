@@ -116,6 +116,7 @@ body {
   margin-bottom: 8px;
 }
 
+input[type="text"],
 select {
   width: 100%;
   padding: 11px 14px;
@@ -135,9 +136,21 @@ select {
   cursor: pointer;
 }
 
+input[type="text"]:focus,
 select:focus {
   border-color: rgba(124, 58, 237, 0.5);
   box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+}
+
+input::placeholder {
+  color: #475569;
+}
+
+.field-hint {
+  display: block;
+  font-size: 11px;
+  color: #475569;
+  margin-top: 6px;
 }
 
 select option {
@@ -266,6 +279,96 @@ select option:disabled {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(124, 58, 237, 0.4);
+}
+
+/* ───────── Light Theme ───────── */
+
+body.light {
+  background: #f8f9fc;
+  color: #1e293b;
+}
+
+body.light .card {
+  background: #ffffff;
+  border-color: rgba(124, 58, 237, 0.12);
+}
+
+body.light .card:hover {
+  border-color: rgba(124, 58, 237, 0.25);
+}
+
+body.light .card-title {
+  color: #1e293b;
+}
+
+body.light .options-header {
+  border-bottom-color: rgba(124, 58, 237, 0.1);
+}
+
+body.light .options-header h1 {
+  color: #1e293b;
+}
+
+body.light .version-label {
+  color: #94a3b8;
+}
+
+body.light input[type="text"],
+body.light select {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #1e293b;
+}
+
+body.light input[type="text"]:focus,
+body.light select:focus {
+  border-color: rgba(124, 58, 237, 0.5);
+  background: #ffffff;
+}
+
+body.light input::placeholder {
+  color: #94a3b8;
+}
+
+body.light select option {
+  background: #ffffff;
+  color: #1e293b;
+}
+
+body.light .field-group label {
+  color: #64748b;
+}
+
+body.light .field-hint {
+  color: #94a3b8;
+}
+
+body.light .danger-zone {
+  border-top-color: rgba(239, 68, 68, 0.1);
+}
+
+body.light .danger-zone p {
+  color: #94a3b8;
+}
+
+body.light .toast.success {
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.3);
+  color: #16a34a;
+}
+
+body.light .toast.error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #dc2626;
+}
+
+body.light ::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.15);
+}
+
+body.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.3);
 }
 
 /* ───────── Responsive ───────── */

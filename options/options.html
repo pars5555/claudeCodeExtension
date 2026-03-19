@@ -34,6 +34,12 @@
       </h2>
 
       <div class="field-group">
+        <label for="server-url-input">Server URL</label>
+        <input type="text" id="server-url-input" placeholder="https://webai.pc.am" spellcheck="false">
+        <span class="field-hint">API server endpoint. Default: https://webai.pc.am</span>
+      </div>
+
+      <div class="field-group">
         <label for="model-select">Model</label>
         <select id="model-select">
           <option value="claude-sonnet-4-6">Claude Sonnet 4 (claude-sonnet-4-6)</option>
@@ -46,7 +52,7 @@
         <label>Theme</label>
         <select id="theme-select">
           <option value="dark">Dark (Default)</option>
-          <option value="light" disabled>Light (Coming Soon)</option>
+          <option value="light">Light</option>
         </select>
       </div>
     </section>

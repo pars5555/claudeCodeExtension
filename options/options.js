@@ -5,6 +5,8 @@
 
   // ─── Constants ───────────────────────────────────────────────
 
+  const DEFAULT_SERVER_URL = 'https://webai.pc.am';
+
   const DEFAULTS = {
     model: 'claude-sonnet-4-6',
     theme: 'dark',
@@ -15,6 +17,7 @@
   const $ = (sel) => document.querySelector(sel);
 
   const elExtVersion = $('#ext-version');
+  const elServerUrl = $('#server-url-input');
   const elModelSelect = $('#model-select');
   const elThemeSelect = $('#theme-select');
   const elResetAllBtn = $('#reset-all-btn');
@@ -84,7 +87,7 @@
     try {
       const [settingsResult, storageResult] = await Promise.all([
         sendMessage({ type: 'GET_SETTINGS' }).catch(() => null),
-        storageGet(['model', 'theme']),
+        storageGet(['model', 'theme', 'serverUrl']),
       ]);
 
       if (settingsResult && settingsResult.model !== undefined) {
@@ -94,24 +97,45 @@
         currentSettings.model = storageResult.model || DEFAULTS.model;
         currentSettings.theme = storageResult.theme || DEFAULTS.theme;
       }
+      currentSettings.serverUrl = storageResult.serverUrl || DEFAULT_SERVER_URL;
     } catch (e) {
-      const storageResult = await storageGet(Object.keys(DEFAULTS));
-      Object.keys(DEFAULTS).forEach((key) => {
-        currentSettings[key] = storageResult[key] !== undefined ? storageResult[key] : DEFAULTS[key];
-      });
+      const storageResult = await storageGet(['model', 'theme', 'serverUrl']);
+      currentSettings.model = storageResult.model || DEFAULTS.model;
+      currentSettings.theme = storageResult.theme || DEFAULTS.theme;
+      currentSettings.serverUrl = storageResult.serverUrl || DEFAULT_SERVER_URL;
     }
   }
 
   // ─── Render ──────────────────────────────────────────────────
 
   function renderSettings() {
+    elServerUrl.value = currentSettings.serverUrl;
     elModelSelect.value = currentSettings.model;
     elThemeSelect.value = currentSettings.theme;
+    applyTheme(currentSettings.theme);
+  }
+
+  function applyTheme(theme) {
+    document.body.classList.remove('light');
+    if (theme === 'light') document.body.classList.add('light');
   }
 
   // ─── Bind Events ─────────────────────────────────────────────
 
+  let serverUrlTimer = null;
+
   function bindEvents() {
+    elServerUrl.addEventListener('input', () => {
+      clearTimeout(serverUrlTimer);
+      serverUrlTimer = setTimeout(() => {
+        let url = elServerUrl.value.trim().replace(/\/+$/, '');
+        if (!url) url = DEFAULT_SERVER_URL;
+        currentSettings.serverUrl = url;
+        storageSet({ serverUrl: url });
+        showToast('Server URL updated to ' + url, 'success');
+      }, 600);
+    });
+
     elModelSelect.addEventListener('change', () => {
       currentSettings.model = elModelSelect.value;
       saveSettings();
@@ -120,6 +144,7 @@
 
     elThemeSelect.addEventListener('change', () => {
       currentSettings.theme = elThemeSelect.value;
+      applyTheme(currentSettings.theme);
       saveSettings();
       showToast('Theme updated', 'success');
     });
@@ -154,7 +179,7 @@
       await sendMessage({ type: 'RESET_ALL' }).catch(() => null);
       await storageClearAll();
 
-      currentSettings = { ...DEFAULTS };
+      currentSettings = { ...DEFAULTS, serverUrl: DEFAULT_SERVER_URL };
       renderSettings();
 
       showToast('All settings have been reset', 'success');
