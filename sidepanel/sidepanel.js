@@ -1570,26 +1570,11 @@
 
     const results = [];
 
-    // Only execute code blocks in the "action" part of the response.
-    // Stop when we hit a prose section (explanation text after code blocks).
-    // This prevents executing code examples inside AI's narrative explanations.
+    // Parse ALL blocks in document order
     const allBlocksRegex = /```(cdp|js|javascript|ext)\s*\n([\s\S]*?)```/g;
     let match;
-    let lastBlockEnd = 0;
     while ((match = allBlocksRegex.exec(responseText)) !== null) {
       if (autoExecCancelled) return results;
-
-      // Check if there's significant prose text between this block and the last one
-      // If so, this block is likely an explanation example, not an executable command
-      if (lastBlockEnd > 0) {
-        var gapText = responseText.substring(lastBlockEnd, match.index).trim();
-        // If gap has >150 chars of prose or contains markdown headings, stop executing
-        if (gapText.length > 150 || /^#{1,4}\s/m.test(gapText)) {
-          break;
-        }
-      }
-      lastBlockEnd = match.index + match[0].length;
-
       const blockType = match[1] === 'javascript' ? 'js' : match[1];
       const rawCmd = match[2].trim();
 
