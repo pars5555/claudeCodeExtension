@@ -563,18 +563,26 @@
 
   function updateUserBadge() {
     if (!userBadge) return;
-    if (authState.isAuthenticated) {
-      userBadge.style.display = 'flex';
-      if (authState.user) {
-        userBadgeText.textContent = authState.user.email || authState.user.displayName || 'User';
-        fetchBalance();
-      } else {
-        userBadgeText.textContent = 'Signed in';
+    chrome.storage.sync.get(['devMode'], (result) => {
+      if (result.devMode) {
+        // Dev mode — hide badge and balance (no sign out needed)
+        userBadge.style.display = 'none';
+        if (userBalanceEl) userBalanceEl.style.display = 'none';
+        return;
       }
-    } else {
-      userBadge.style.display = 'none';
-      if (userBalanceEl) userBalanceEl.style.display = 'none';
-    }
+      if (authState.isAuthenticated) {
+        userBadge.style.display = 'flex';
+        if (authState.user) {
+          userBadgeText.textContent = authState.user.email || authState.user.displayName || 'User';
+          fetchBalance();
+        } else {
+          userBadgeText.textContent = 'Signed in';
+        }
+      } else {
+        userBadge.style.display = 'none';
+        if (userBalanceEl) userBalanceEl.style.display = 'none';
+      }
+    });
   }
 
   async function fetchBalance() {
@@ -614,11 +622,12 @@
   document.getElementById('claude-oauth-apple')?.addEventListener('click', () => handleOAuth('apple'));
   document.getElementById('claude-oauth-github')?.addEventListener('click', () => handleOAuth('github'));
 
-  // User badge logout
+  // User badge logout (disabled in dev mode)
   userBadge?.addEventListener('click', () => {
-    if (confirm('Sign out?')) {
-      logout();
-    }
+    chrome.storage.sync.get(['devMode'], (result) => {
+      if (result.devMode) return;
+      if (confirm('Sign out?')) logout();
+    });
   });
 
   // Init auth on load
