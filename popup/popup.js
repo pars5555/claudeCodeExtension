@@ -35,8 +35,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── Server connection status ──────────────────────────────────────────────
-  chrome.storage.sync.get(['serverUrl'], (result) => {
-    const serverUrl = result.serverUrl || 'https://webai.pc.am';
+  chrome.storage.sync.get(['devMode'], (result) => {
+    const serverUrl = result.devMode ? 'http://localhost:3466' : 'https://webai.pc.am';
     statusText.textContent = 'Checking server...';
 
     fetch(serverUrl + '/api/auth/me', {
