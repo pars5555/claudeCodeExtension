@@ -353,7 +353,26 @@
     });
   }
 
+  // Load and apply theme from storage
+  function loadTheme() {
+    chrome.storage.sync.get(['theme'], (result) => {
+      if (result.theme === 'light') document.body.classList.add('light');
+    });
+  }
+
+  // Listen for theme changes from options page
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.theme) {
+      document.body.classList.remove('light');
+      if (changes.theme.newValue === 'light') document.body.classList.add('light');
+    }
+    if (area === 'sync' && changes.serverUrl) {
+      SERVER_URL = changes.serverUrl.newValue || 'https://webai.pc.am';
+    }
+  });
+
   async function initAuth() {
+    loadTheme();
     await loadServerUrl();
     // Load stored tokens
     return new Promise((resolve) => {

@@ -1144,3 +1144,183 @@ body {
   color: #f87171;
   font-size: 13px;
 }
+
+/* ========================================================================
+   Light Theme
+   ======================================================================== */
+
+body.light {
+  color: #1e293b;
+  background: #f8f9fc;
+}
+
+/* Header */
+body.light .claude-panel-header {
+  background: linear-gradient(135deg, #f1f5f9, #e8ecf4);
+  border-bottom-color: rgba(124, 58, 237, 0.12);
+}
+
+body.light #claude-model-select {
+  background: rgba(124, 58, 237, 0.08);
+  color: #6D28D9;
+  border-color: rgba(124, 58, 237, 0.2);
+}
+
+body.light #claude-model-select option {
+  background: #ffffff;
+  color: #1e293b;
+}
+
+body.light .claude-header-btn {
+  color: #64748b;
+}
+
+body.light .claude-header-btn:hover {
+  background: rgba(124, 58, 237, 0.1);
+  color: #6D28D9;
+}
+
+/* Messages */
+body.light .claude-messages::-webkit-scrollbar-track {
+  background: #f8f9fc;
+}
+
+body.light .claude-messages::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
+body.light .claude-messages::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Welcome */
+body.light .claude-welcome { color: #94a3b8; }
+body.light .claude-welcome h3 { color: #1e293b; }
+
+/* Bubbles */
+body.light .claude-message-assistant .claude-message-bubble {
+  background: #ffffff;
+  color: #1e293b;
+  border-color: #e2e8f0;
+}
+
+body.light .claude-message-assistant .claude-message-bubble strong { color: #0f172a; }
+body.light .claude-message-assistant .claude-message-bubble em { color: #6D28D9; }
+body.light .claude-message-assistant .claude-message-bubble a { color: #7C3AED; }
+body.light .claude-message-assistant .claude-message-bubble a:hover { color: #6D28D9; }
+body.light .claude-message-assistant .claude-message-bubble h1,
+body.light .claude-message-assistant .claude-message-bubble h2,
+body.light .claude-message-assistant .claude-message-bubble h3,
+body.light .claude-message-assistant .claude-message-bubble h4 { color: #0f172a; }
+
+body.light .claude-message-label { opacity: 0.8; }
+body.light .claude-message-assistant .claude-message-label { color: #0284c7; }
+body.light .claude-message-time { color: #94a3b8; }
+
+/* Inline code */
+body.light .claude-message-bubble code:not(.claude-code-block code) {
+  background: rgba(124, 58, 237, 0.08);
+  color: #6D28D9;
+}
+
+/* Code blocks */
+body.light .claude-code-block {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+body.light .claude-code-header {
+  background: rgba(30, 41, 59, 0.8);
+  color: #a78bfa;
+}
+
+/* Tool blocks */
+body.light .claude-tool-block {
+  border-color: #e2e8f0;
+  background: rgba(248, 249, 252, 0.8);
+}
+
+body.light .claude-tool-block summary { color: #64748b; }
+body.light .claude-tool-block summary::before { color: #94a3b8; }
+body.light .claude-tool-block summary:hover { background: rgba(124, 58, 237, 0.05); }
+body.light .claude-tool-label { color: #475569; }
+body.light .claude-tool-preview { color: #94a3b8; }
+body.light .claude-tool-lines { color: #94a3b8; }
+body.light .claude-tool-content { color: #475569; border-top-color: #e2e8f0; }
+body.light .claude-tool-block .claude-code-block { border-top-color: #334155; }
+
+/* System message */
+body.light .claude-system-msg {
+  color: #94a3b8;
+  background: rgba(124, 58, 237, 0.03);
+}
+
+/* Context bar */
+body.light .claude-context-bar {
+  background: #f1f5f9;
+  border-top-color: #e2e8f0;
+}
+
+body.light .claude-context-meter { background: #e2e8f0; }
+body.light .claude-context-label { color: #94a3b8; }
+
+/* Input area */
+body.light .claude-input-area {
+  background: #f1f5f9;
+  border-top-color: #e2e8f0;
+}
+
+body.light #claude-chat-input {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  color: #1e293b;
+}
+
+body.light #claude-chat-input::placeholder { color: #94a3b8; }
+body.light #claude-chat-input:focus { border-color: rgba(124, 58, 237, 0.5); }
+
+/* Input bottom */
+body.light .claude-tab-context { color: #94a3b8; }
+body.light .claude-input-action-btn { color: #94a3b8; }
+body.light .claude-input-action-btn:hover { color: #6D28D9; }
+
+/* Copy button */
+body.light .claude-msg-copy-btn { color: #94a3b8; }
+body.light .claude-msg-copy-btn:hover { color: #6D28D9; }
+body.light .claude-code-copy { color: #94a3b8; }
+body.light .claude-code-copy:hover { color: #c4b5fd; }
+
+/* Auth overlay */
+body.light .claude-auth-overlay { background: #f8f9fc; }
+body.light .claude-auth-card {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+body.light .claude-auth-title { color: #0f172a; }
+body.light .claude-auth-subtitle { color: #94a3b8; }
+
+/* User badge */
+body.light .claude-user-badge {
+  background: rgba(124, 58, 237, 0.06);
+  border-color: rgba(124, 58, 237, 0.15);
+}
+body.light .claude-user-badge-text { color: #6D28D9; }
+
+/* Attachments */
+body.light .claude-attachment-item {
+  background: rgba(124, 58, 237, 0.05);
+  border-color: rgba(124, 58, 237, 0.12);
+  color: #6D28D9;
+}
+
+/* Auto-exec status */
+body.light .claude-auto-exec-status {
+  background: rgba(124, 58, 237, 0.04);
+}
+
+/* Execute query button */
+body.light .claude-execute-query {
+  background: rgba(124, 58, 237, 0.08);
+  border-color: rgba(124, 58, 237, 0.2);
+  color: #7C3AED;
+}
