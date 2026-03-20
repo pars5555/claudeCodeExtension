@@ -1,5 +1,92 @@
 /* sidepanel.css — AI Web Assistant Side Panel Styles */
 
+/* ========================================================================
+   First-run Disclaimer
+   ======================================================================== */
+
+.disclaimer-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: #1a1b2e;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.disclaimer-card {
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+}
+
+.disclaimer-card h2 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-bottom: 20px;
+}
+
+.disclaimer-items {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 24px;
+}
+
+.disclaimer-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #252745;
+  border: 1px solid rgba(124, 58, 237, 0.1);
+}
+
+.disclaimer-item:first-child { border-radius: 12px 12px 0 0; }
+.disclaimer-item:last-child { border-radius: 0 0 12px 12px; }
+
+.disclaimer-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.disclaimer-item p {
+  font-size: 13px;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.disclaimer-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 32px;
+  background: linear-gradient(135deg, #7C3AED, #6D28D9);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.disclaimer-btn:hover {
+  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+  transform: translateY(-1px);
+}
+
+/* Light theme */
+body.light .disclaimer-overlay { background: #f8f9fc; }
+body.light .disclaimer-card h2 { color: #1e293b; }
+body.light .disclaimer-item { background: #ffffff; border-color: #e2e8f0; }
+body.light .disclaimer-item p { color: #475569; }
+
 * {
   margin: 0;
   padding: 0;

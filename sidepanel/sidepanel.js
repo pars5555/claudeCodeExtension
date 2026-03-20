@@ -650,7 +650,24 @@
   });
 
   // Init auth on load
-  initAuth();
+  // First-run disclaimer — show once, then never again
+  chrome.storage.local.get(['disclaimerAccepted'], (result) => {
+    if (result.disclaimerAccepted) {
+      initAuth();
+    } else {
+      const overlay = document.getElementById('disclaimer-overlay');
+      if (overlay) {
+        overlay.style.display = 'flex';
+        document.getElementById('disclaimer-accept-btn').addEventListener('click', () => {
+          chrome.storage.local.set({ disclaimerAccepted: true });
+          overlay.style.display = 'none';
+          initAuth();
+        });
+      } else {
+        initAuth();
+      }
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // Event listeners

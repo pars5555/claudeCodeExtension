@@ -7,6 +7,29 @@
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
+  <!-- First-run Disclaimer -->
+  <div id="disclaimer-overlay" class="disclaimer-overlay" style="display:none;">
+    <div class="disclaimer-card">
+      <img src="../icons/wai-logo-text.svg" width="64" height="64" alt="wAi" style="border-radius:14px;margin-bottom:16px;">
+      <h2>This is a beta feature</h2>
+      <div class="disclaimer-items">
+        <div class="disclaimer-item">
+          <span class="disclaimer-icon">⚠️</span>
+          <p>This beta feature has unique risks. You are fully responsible for all risks associated with use of this product.</p>
+        </div>
+        <div class="disclaimer-item">
+          <span class="disclaimer-icon">👁️</span>
+          <p>The AI can read page content, execute browser actions, and access cookies when responding. Avoid using on sensitive sites like banking and health platforms.</p>
+        </div>
+        <div class="disclaimer-item">
+          <span class="disclaimer-icon">🔺</span>
+          <p>Malicious actors can hide instructions in websites that trick AI into taking harmful actions without your knowledge.</p>
+        </div>
+      </div>
+      <button id="disclaimer-accept-btn" class="disclaimer-btn">I understand</button>
+    </div>
+  </div>
+
   <!-- Auth Overlay -->
   <div class="claude-auth-overlay" id="claude-auth-overlay" style="display:none;">
     <div class="claude-auth-card">
