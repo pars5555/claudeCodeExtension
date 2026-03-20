@@ -342,6 +342,7 @@
 
     _prevModel = model;
     chrome.storage.sync.set({ model });
+    pingServer(); // signal presence on model change
     try {
       await fetch(SERVER_URL + '/api/user/settings/model', {
         method: 'PUT',
