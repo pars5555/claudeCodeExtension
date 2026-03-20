@@ -481,6 +481,15 @@
     return headers;
   }
 
+  // Presence ping — tells server user is active (triggers warmup)
+  function pingServer() {
+    if (!authState.accessToken) return;
+    fetch(SERVER_URL + '/api/ping', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    }).catch(() => {});
+  }
+
   function saveAuthState() {
     chrome.storage.local.set({
       authAccessToken: authState.accessToken,
@@ -576,6 +585,7 @@
     }
     updateUserBadge();
     syncModelFromServer();
+    pingServer(); // signal presence on chat UI show
   }
 
   const userBalanceEl = document.getElementById('claude-user-balance');

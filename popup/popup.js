@@ -34,10 +34,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ── Server connection status ──────────────────────────────────────────────
+  // ── Server connection status + presence ping ────────────────────────────────
   chrome.storage.sync.get(['devMode'], (result) => {
     const serverUrl = result.devMode ? 'http://localhost:3466' : 'https://webai.pc.am';
     statusText.textContent = 'Checking server...';
+
+    // Ping server for presence (popup opened = user is active)
+    chrome.storage.local.get(['authAccessToken'], (auth) => {
+      if (auth.authAccessToken) {
+        fetch(serverUrl + '/api/ping', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + auth.authAccessToken },
+        }).catch(() => {});
+      }
+    });
 
     fetch(serverUrl + '/api/auth/me', {
       method: 'GET',
