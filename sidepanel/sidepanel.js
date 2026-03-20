@@ -1229,18 +1229,14 @@
   // ---------------------------------------------------------------------------
   // Server SSE Chat — direct fetch to /api/chat with streaming
   // ---------------------------------------------------------------------------
-  async function sendViaServerSSE(userMessage, tabId, retryCount, pageContext, isExec, lockedSessionId) {
+  async function sendViaServerSSE(userMessage, tabId, retryCount, pageContext, isExec) {
     retryCount = retryCount || 0;
 
     const isBackgroundTaskFollowUp = taskCtx && tabId === taskCtx.originTab;
-    // lockedSessionId: captured at auto-exec start, survives tab switches
-    const sessionForRequest = lockedSessionId
-      || (isBackgroundTaskFollowUp ? taskCtx.sessionId : chatSessionId);
-
     const body = {
       message: userMessage,
       tabId: tabId,
-      sessionId: sessionForRequest || undefined,
+      sessionId: (isBackgroundTaskFollowUp ? taskCtx.sessionId : chatSessionId) || undefined,
     };
     if (pageContext) body.pageContext = pageContext;
     if (isExec) body.isExec = true;
@@ -1633,7 +1629,6 @@
     // Use taskTabId (locked at submission time) so tab switches don't break the loop
     const execTabId = taskTabId || currentTabId;
     // Lock the session ID so tab switches during auto-exec don't lose it
-    const execSessionId = chatSessionId || (taskCtx ? taskCtx.sessionId : null);
     // Profiling: AI response time = time from SSE send to stream end
     const aiResponseMs = _stepSendTime ? (Date.now() - _stepSendTime) : 0;
 
@@ -1679,7 +1674,7 @@
           if (taskCtx) taskCtx.isStreaming = true;
           updateSendButton();
           _stepSendTime = Date.now();
-          sendViaServerSSE(followUpPrompt, execTabId, 0, null, true, execSessionId);
+          sendViaServerSSE(followUpPrompt, execTabId, 0, null, true);
         } else {
           // No CDP blocks — task is done
           finishTask();
