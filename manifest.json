@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AI Web Assistant",
   "version": "1.4.0",
-  "description": "AI-powered browser assistant with Claude and Gemini. Automate web tasks, analyze pages, and interact with any website using natural language.",
+  "description": "AI browser assistant with Claude and Gemini. Automate tasks, analyze pages, interact with any website.",
   "permissions": [
     "activeTab",
     "scripting",
