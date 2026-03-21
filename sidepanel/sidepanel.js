@@ -822,10 +822,10 @@
   // Top-up: click balance to add funds
   if (userBalanceEl) {
     userBalanceEl.addEventListener('click', async () => {
-      var amount = await showPrompt('Enter amount in USD to add (e.g. 5, 10, 25):', '10');
+      var amount = await showPrompt('Enter amount in USD to add (min $25):', '25');
       if (!amount) return;
       amount = parseFloat(amount);
-      if (isNaN(amount) || amount < 1 || amount > 1000) { showAlert('Amount must be between $1 and $1000'); return; }
+      if (isNaN(amount) || amount < 25 || amount > 1000) { showAlert('Amount must be between $25 and $1000'); return; }
       try {
         var res = await fetch(SERVER_URL + '/api/billing/create-payment', {
           method: 'POST',
