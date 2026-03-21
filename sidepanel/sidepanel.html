@@ -84,20 +84,24 @@
       </select>
     </div>
     <div class="claude-panel-header-actions">
+      <select id="claude-session-select" title="Switch chat session">
+        <option value="">+ New Chat</option>
+      </select>
       <span class="claude-user-balance" id="claude-user-balance" style="display:none;font-size:11px;color:#8b5cf6;font-weight:600;padding:2px 6px;background:rgba(139,92,246,0.15);border-radius:4px;" title="Your balance"></span>
       <div class="claude-user-badge" id="claude-user-badge" style="display:none;" title="Click for account options">
         <span class="claude-user-badge-text" id="claude-user-badge-text"></span>
         <svg viewBox="0 0 24 24" width="12" height="12"><path d="M7 10l5 5 5-5z" fill="currentColor"/></svg>
       </div>
-      <button class="claude-header-btn" id="claude-clear-btn" title="Clear chat">
+      <button class="claude-header-btn" id="claude-clear-btn" title="End chat">
         <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
       </button>
     </div>
   </div>
 
-  <!-- Messages -->
-  <div class="claude-messages" id="claude-messages">
-    <!-- Welcome message inserted by JS -->
+  <!-- Sessions wrapper — each chat session is a child container -->
+  <div class="claude-sessions-wrapper" id="claude-sessions-wrapper">
+    <!-- Session containers are created dynamically by JS -->
+    <!-- Welcome container is the default view -->
   </div>
 
   <!-- Context meter -->

@@ -1,4 +1,4 @@
-// sidepanel.js — AI Web Assistant Side Panel
+// sidepanel.js — AI Web Assistant Side Panel (Multi-Container Session Architecture)
 
 (function () {
   'use strict';
@@ -24,18 +24,18 @@
     user: null,
     isAuthenticated: false,
   };
-  let currentAbortController = null;
+  // currentAbortController is stored per-session as session.abortController
 
-  // Per-tab chat storage: tabId → { history: [], messagesHtml: string }
-  const tabChats = new Map();
+  // ---------------------------------------------------------------------------
+  // Session State (multi-container architecture)
+  // ---------------------------------------------------------------------------
+  // Each session has its own DOM container that persists in the wrapper.
+  // sessionId → { el, history, isStreaming, streamText, tabId, model, title }
+  const sessions = new Map();
+  let activeSessionId = null;
 
-  // Buffer stream messages for non-active tabs so they don't get lost
-  // tabId → { streamText: string, ended: bool, fullText: string, error: string }
-  const tabStreamBuffers = new Map();
-
-  // Background task context — holds task state independently of active tab view
-  // When a task is running and user switches tabs, this preserves the task's DOM and history
-  let taskCtx = null; // { originTab, container (offscreen div), history, sessionId, streamText }
+  // Note: streaming state is per-session (session.isStreaming, session.streamText, session.abortController)
+  // No global streamingSessionId — each SSE connection captures its target via closure
 
   // Pending file/image attachments: Array of { name, type, dataUrl, base64, mediaType }
   let pendingAttachments = [];
@@ -48,7 +48,7 @@
   };
 
   // ---------------------------------------------------------------------------
-  // Tab switch detection — auto-refresh context when user changes tabs
+  // Tab switch detection
   // ---------------------------------------------------------------------------
   async function updateCurrentTab() {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -58,110 +58,28 @@
     const oldTabId = currentTabId;
     const tabChanged = oldTabId !== null && oldTabId !== tab.id;
 
-    if (tabChanged) {
-      // Check if switching back to the background task's origin tab
-      if (taskCtx && tab.id === taskCtx.originTab) {
-        // Save the tab we're leaving
-        tabChats.set(oldTabId, {
-          history: JSON.parse(JSON.stringify(conversationHistory)),
-          messagesHtml: messagesEl.innerHTML,
-          isStreaming: false,
-          streamText: '',
-          inputValue: inputEl.value,
-          inputAttachments: [...pendingAttachments],
-          sessionId: chatSessionId,
-        });
-
-        // Restore task's DOM and state from offscreen container
-        messagesEl.innerHTML = taskCtx.container.innerHTML;
-        messagesEl.querySelectorAll('.claude-message-assistant .claude-message-bubble').forEach(attachCodeActions);
-        conversationHistory = taskCtx.history;
-        chatSessionId = taskCtx.sessionId;
-        currentStreamText = taskCtx.streamText;
-        isStreaming = taskCtx.isStreaming;
-        taskCtx.container.remove();
-        taskCtx = null;
-
-        currentTabId = tab.id;
-        currentTabInfo = { url: tab.url || '', title: tab.title || '' };
-        updateTabIndicator();
-        updateSendButton();
-        updateContextMeter();
-        scrollToBottom();
-        return;
-      }
-
-      // If a task is actively running on the current tab, move it to background
-      if ((isStreaming || taskTabId) && !taskCtx) {
-        const offscreen = document.createElement('div');
-        offscreen.style.display = 'none';
-        offscreen.innerHTML = messagesEl.innerHTML;
-        document.body.appendChild(offscreen);
-        taskCtx = {
-          originTab: oldTabId,
-          container: offscreen,
-          history: conversationHistory, // keep reference — auto-exec pushes here
-          sessionId: chatSessionId,
-          streamText: currentStreamText,
-          isStreaming: true,
-        };
-        // taskCtx is now the source of truth for the task tab — don't save to tabChats
-      } else {
-        // Normal save — no active task
-        tabChats.set(oldTabId, {
-          history: JSON.parse(JSON.stringify(conversationHistory)),
-          messagesHtml: messagesEl.innerHTML,
-          isStreaming: isStreaming,
-          streamText: currentStreamText,
-          inputValue: inputEl.value,
-          inputAttachments: [...pendingAttachments],
-          sessionId: chatSessionId,
-        });
-      }
-    }
-
     currentTabId = tab.id;
     currentTabInfo = { url: tab.url || '', title: tab.title || '' };
 
-    // Update header to show current page
-    updateTabIndicator();
-
     if (tabChanged) {
-      // Reset streaming state for the view (task continues in background via taskCtx)
-      isStreaming = false;
-      currentStreamText = '';
+      // Save current session state before switching
+      saveActiveSessionState();
 
-      // Restore saved chat for new tab, or show welcome
-      const saved = tabChats.get(currentTabId);
-      if (saved) {
-        conversationHistory = JSON.parse(JSON.stringify(saved.history));
-        chatSessionId = saved.sessionId || null;
-        messagesEl.innerHTML = saved.messagesHtml;
-        // Re-attach code actions (copy buttons, etc.)
-        messagesEl.querySelectorAll('.claude-message-assistant .claude-message-bubble').forEach(attachCodeActions);
-        // Restore streaming state if this tab was streaming
-        if (saved.isStreaming) {
-          isStreaming = true;
-          currentStreamText = saved.streamText || '';
-        }
+      // Find session associated with the new tab
+      const sessionForTab = findSessionByTabId(tab.id);
+      if (sessionForTab) {
+        switchToSession(sessionForTab);
       } else {
-        conversationHistory = [];
-        chatSessionId = null;
-        messagesEl.innerHTML = getWelcomeHTML();
+        // No session for this tab — show welcome
+        switchToSession(null);
       }
-      // Restore input state for this tab (or clear it)
-      inputEl.value = saved ? (saved.inputValue || '') : '';
-      inputEl.style.height = 'auto';
-      pendingAttachments = saved ? (saved.inputAttachments || []) : [];
-      renderAttachments();
-      updateSendButton();
-      updateContextMeter();
-      scrollToBottom();
     }
+
+    // Update indicator AFTER session switch so it shows correct session
+    updateTabIndicator();
   }
 
   function updateTabIndicator() {
-    // Update header sub-bar
     let indicator = document.getElementById('claude-tab-indicator');
     if (!indicator) {
       indicator = document.createElement('div');
@@ -172,11 +90,10 @@
     }
     let host = '';
     try { host = currentTabInfo.url ? new URL(currentTabInfo.url).hostname : ''; } catch (e) {}
-    var sid = taskCtx ? taskCtx.sessionId : chatSessionId;
-    indicator.textContent = (host || currentTabInfo.title || 'No page') + (sid ? '  ·  ' + sid.slice(0, 8) : '');
-    indicator.title = (currentTabInfo.url || '') + (sid ? '\nSession: ' + sid : '');
+    var sid = activeSessionId || chatSessionId;
+    indicator.textContent = (host || currentTabInfo.title || 'No page') + '  ·  tab:' + (currentTabId || '?') + (sid ? '  ·  ' + sid.slice(0, 8) : '');
+    indicator.title = (currentTabInfo.url || '') + '\nTab ID: ' + (currentTabId || '?') + (sid ? '\nSession: ' + sid : '');
 
-    // Update bottom tab context label (under input)
     const tabContextLabel = document.getElementById('claude-tab-context-label');
     if (tabContextLabel) {
       const title = currentTabInfo.title || '';
@@ -194,13 +111,183 @@
     }
   });
 
-  // Clean up stored chat when tab is closed
-  chrome.tabs.onRemoved.addListener((tabId) => {
-    tabChats.delete(tabId);
-  });
-
   // Init current tab
   updateCurrentTab();
+
+  // ---------------------------------------------------------------------------
+  // Session Management
+  // ---------------------------------------------------------------------------
+  function createSessionContainer(sessionId) {
+    const el = document.createElement('div');
+    el.className = 'session-container';
+    el.dataset.sessionId = sessionId;
+    sessionsWrapper.appendChild(el);
+    // Scroll listener per container
+    el.addEventListener('scroll', function () {
+      var atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      _autoScroll = atBottom;
+    });
+    return el;
+  }
+
+  function saveActiveSessionState() {
+    if (activeSessionId && sessions.has(activeSessionId)) {
+      const s = sessions.get(activeSessionId);
+      s.history = conversationHistory;
+      s.isStreaming = isStreaming;
+      s.streamText = currentStreamText;
+      s.inputValue = inputEl.value;
+      s.inputAttachments = [...pendingAttachments];
+      s.model = modelSelect.value; // save current model for this session
+    }
+  }
+
+  function switchToSession(sessionId) {
+    // Save state of current session
+    saveActiveSessionState();
+
+    // Hide all session containers
+    sessionsWrapper.querySelectorAll('.session-container').forEach(function (c) {
+      c.classList.remove('active');
+    });
+
+    if (!sessionId || !sessions.has(sessionId)) {
+      // Show welcome
+      welcomeContainer.classList.add('active');
+      messagesEl = welcomeContainer;
+      activeSessionId = null;
+      conversationHistory = [];
+      chatSessionId = null;
+      isStreaming = false;
+      currentStreamText = '';
+      pendingAttachments = [];
+      renderAttachments();
+      // Restore default model for new chats
+      chrome.storage.sync.get(['model'], (result) => {
+        if (result.model && modelSelect) {
+          modelSelect.value = result.model;
+          _prevModel = result.model;
+        }
+      });
+    } else {
+      // Show session
+      welcomeContainer.classList.remove('active');
+      const session = sessions.get(sessionId);
+      session.el.classList.add('active');
+      messagesEl = session.el;
+      activeSessionId = sessionId;
+      conversationHistory = session.history;
+      chatSessionId = sessionId;
+      isStreaming = session.isStreaming || false;
+      currentStreamText = session.streamText || '';
+      // Restore input state
+      inputEl.value = session.inputValue || '';
+      inputEl.style.height = 'auto';
+      pendingAttachments = session.inputAttachments || [];
+      renderAttachments();
+      // Restore session's model
+      if (session.model && modelSelect) {
+        modelSelect.value = session.model;
+        _prevModel = session.model;
+      }
+    }
+
+    // Update selector and indicator to match
+    if (sessionSelect) sessionSelect.value = sessionId || '';
+    updateTabIndicator();
+    updateSendButton();
+    updateContextMeter();
+    scrollToBottom();
+  }
+
+  function findSessionByTabId(tabId) {
+    for (const [sid, s] of sessions) {
+      if (s.tabId === tabId) return sid;
+    }
+    return null;
+  }
+
+  function addSessionToSelector(sessionId, title) {
+    if (!sessionSelect) return;
+    // Check if option already exists
+    for (const opt of sessionSelect.options) {
+      if (opt.value === sessionId) {
+        opt.textContent = title || sessionId.slice(0, 8);
+        return;
+      }
+    }
+    const option = document.createElement('option');
+    option.value = sessionId;
+    option.textContent = title || sessionId.slice(0, 8);
+    sessionSelect.appendChild(option);
+  }
+
+  function removeSessionFromSelector(sessionId) {
+    if (!sessionSelect) return;
+    for (const opt of sessionSelect.options) {
+      if (opt.value === sessionId) {
+        opt.remove();
+        return;
+      }
+    }
+  }
+
+  function updateSessionSelector() {
+    if (!sessionSelect) return;
+    // Clear all except the "New Chat" option
+    while (sessionSelect.options.length > 1) {
+      sessionSelect.options[1].remove();
+    }
+    // Add all sessions
+    for (const [sid, s] of sessions) {
+      addSessionToSelector(sid, s.title);
+    }
+    sessionSelect.value = activeSessionId || '';
+  }
+
+  async function loadUserSessions() {
+    if (!authState.accessToken) return;
+    try {
+      const res = await fetch(SERVER_URL + '/api/user/chat-sessions', {
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const serverSessions = data.sessions || [];
+      for (const s of serverSessions) {
+        if (!sessions.has(s.id)) {
+          // Create a container for this session (messages will be loaded lazily)
+          const el = createSessionContainer(s.id);
+          el.innerHTML = '<div class="claude-welcome"><p style="color:#64748b;font-size:12px;">Chat: ' + escapeHtml(s.title || 'Untitled') + '</p><p style="color:#475569;font-size:11px;">Switch here to continue this chat</p></div>';
+          sessions.set(s.id, {
+            el: el,
+            history: [],
+            isStreaming: false,
+            streamText: '',
+            tabId: null, // Don't set tabId for server-loaded sessions (stale tab mappings)
+            model: s.model || '',
+            title: s.title || s.id.slice(0, 8),
+            firstMessage: s.first_message || '',
+            loaded: false, // messages not yet loaded from server
+            inputValue: '',
+            inputAttachments: [],
+          });
+        }
+      }
+      updateSessionSelector();
+    } catch (e) { /* silent */ }
+  }
+
+  // Get container/history for a specific session (used by streaming handlers via closure)
+  function getSessionContainer(sid) {
+    if (sid && sessions.has(sid)) return sessions.get(sid).el;
+    return messagesEl;
+  }
+
+  function getSessionHistory(sid) {
+    if (sid && sessions.has(sid)) return sessions.get(sid).history;
+    return conversationHistory;
+  }
 
   // ---------------------------------------------------------------------------
   // SVG Icons (inline)
@@ -219,7 +306,6 @@
     return div.innerHTML;
   }
 
-  // Auto-scroll: enabled by default, disabled when user scrolls up, re-enabled when user scrolls to bottom
   let _autoScroll = true;
 
   function scrollToBottom() {
@@ -231,9 +317,6 @@
     });
   }
 
-  // Detect manual scroll — initialized after messagesEl is defined (see below)
-
-  // Clipboard helper — works in extension side panel context
   function copyToClipboard(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       return navigator.clipboard.writeText(text).catch(function () {
@@ -276,11 +359,12 @@
   // ---------------------------------------------------------------------------
   // Element references
   // ---------------------------------------------------------------------------
-  const messagesEl = document.getElementById('claude-messages');
+  const sessionsWrapper = document.getElementById('claude-sessions-wrapper');
   const inputEl = document.getElementById('claude-chat-input');
   const sendBtn = document.getElementById('claude-send-btn');
   const clearBtn = document.getElementById('claude-clear-btn');
   const modelSelect = document.getElementById('claude-model-select');
+  const sessionSelect = document.getElementById('claude-session-select');
   const contextFill = document.getElementById('claude-context-fill');
   const contextLabel = document.getElementById('claude-context-label');
   const compactBtn = document.getElementById('claude-compact-btn');
@@ -288,12 +372,19 @@
   const fileInput = document.getElementById('claude-file-input');
   const attachmentsEl = document.getElementById('claude-attachments');
 
-  // Show welcome
-  messagesEl.innerHTML = getWelcomeHTML();
+  // Create the welcome container (default view when no session is active)
+  const welcomeContainer = document.createElement('div');
+  welcomeContainer.className = 'session-container active';
+  welcomeContainer.dataset.sessionId = '';
+  welcomeContainer.innerHTML = getWelcomeHTML();
+  sessionsWrapper.appendChild(welcomeContainer);
 
-  // Init auto-scroll listener (must be after messagesEl is defined)
-  messagesEl.addEventListener('scroll', function() {
-    var atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
+  // messagesEl points to the active session's container (starts as welcome)
+  let messagesEl = welcomeContainer;
+
+  // Init auto-scroll listener for welcome container
+  welcomeContainer.addEventListener('scroll', function () {
+    var atBottom = welcomeContainer.scrollHeight - welcomeContainer.scrollTop - welcomeContainer.clientHeight < 40;
     _autoScroll = atBottom;
   });
 
@@ -326,14 +417,14 @@
     } catch (e) { /* ignore */ }
   }
 
-  // Save model on change — clear chat and start new session with new model
+  // Model change — per-tab: ends current chat, starts fresh with new model on this tab only
   let _prevModel = modelSelect.value;
   modelSelect.addEventListener('change', async () => {
     const model = modelSelect.value;
-    const hasActiveChat = chatSessionId || (taskCtx && taskCtx.sessionId);
+    const hasActiveChat = activeSessionId;
 
     if (hasActiveChat) {
-      if (!confirm('Changing model will clear the current chat. Continue?')) {
+      if (!confirm('Changing model will end the current chat on this tab. Continue?')) {
         modelSelect.value = _prevModel;
         return;
       }
@@ -341,8 +432,9 @@
     }
 
     _prevModel = model;
+    // Save as default for NEW chats (doesn't affect other tabs with existing sessions)
     chrome.storage.sync.set({ model });
-    pingServer(); // signal presence on model change
+    pingServer();
     try {
       await fetch(SERVER_URL + '/api/user/settings/model', {
         method: 'PUT',
@@ -350,6 +442,17 @@
         body: JSON.stringify({ value: model }),
       });
     } catch (e) { /* ignore */ }
+  });
+
+  // Session selector — switch between chat sessions
+  sessionSelect.addEventListener('change', () => {
+    const selectedId = sessionSelect.value;
+    if (selectedId === '') {
+      // "New Chat" selected
+      switchToSession(null);
+    } else {
+      switchToSession(selectedId);
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -364,14 +467,12 @@
     });
   }
 
-  // Load and apply theme from storage
   function loadTheme() {
     chrome.storage.sync.get(['theme'], (result) => {
       if (result.theme === 'light') document.body.classList.add('light');
     });
   }
 
-  // Listen for theme changes from options page
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'sync' && changes.theme) {
       document.body.classList.remove('light');
@@ -385,11 +486,8 @@
   async function initAuth() {
     loadTheme();
     await loadServerUrl();
-
-    // Clear stale auth from other mode
     await clearAuthState();
 
-    // Dev mode — auto-login via email/password, skip OAuth
     const syncData = await storageGet(['devMode', 'devUser']);
     if (syncData.devMode) {
       const userParts = (syncData.devUser || 'pars5555@yahoo.com|admin123').split('|');
@@ -414,12 +512,10 @@
       } catch (e) {
         console.warn('Dev auto-login failed:', e.message);
       }
-      // Dev mode but login failed — show chat anyway
       showChatUI();
       return true;
     }
 
-    // Normal auth flow
     return new Promise((resolve) => {
       chrome.storage.local.get(['authAccessToken', 'authRefreshToken', 'authUser'], async (result) => {
         if (result.authAccessToken) {
@@ -428,7 +524,6 @@
           authState.user = result.authUser || null;
           authState.isAuthenticated = true;
 
-          // Validate token with /api/auth/me
           try {
             const res = await fetch(SERVER_URL + '/api/auth/me', {
               headers: getAuthHeaders()
@@ -440,7 +535,6 @@
               resolve(true);
               return;
             } else if (res.status === 401) {
-              // Try refresh
               const refreshed = await refreshAccessToken();
               if (refreshed) {
                 showChatUI();
@@ -449,7 +543,6 @@
               }
             }
           } catch (e) {
-            // Server down — still show chat if we have tokens (offline mode)
             console.warn('Auth check failed (server may be down):', e.message);
             showChatUI();
             resolve(true);
@@ -457,7 +550,6 @@
           }
         }
 
-        // No valid auth — show login
         if (!authState.isAuthenticated) {
           showAuthOverlay();
           resolve(false);
@@ -482,7 +574,6 @@
     return headers;
   }
 
-  // Presence ping — tells server user is active (triggers warmup)
   function pingServer() {
     if (!authState.accessToken) return;
     fetch(SERVER_URL + '/api/ping', {
@@ -571,9 +662,7 @@
   // Auth: UI Controls
   // ---------------------------------------------------------------------------
   function showAuthOverlay() {
-    if (authOverlay) {
-      authOverlay.style.display = 'flex';
-    }
+    if (authOverlay) authOverlay.style.display = 'flex';
     hideAuthError();
     hideAuthSuccess();
     authSubtitle.textContent = 'Sign in to start chatting';
@@ -581,12 +670,11 @@
   }
 
   function showChatUI() {
-    if (authOverlay) {
-      authOverlay.style.display = 'none';
-    }
+    if (authOverlay) authOverlay.style.display = 'none';
     updateUserBadge();
     syncModelFromServer();
-    pingServer(); // signal presence on chat UI show
+    pingServer();
+    loadUserSessions(); // Load active sessions from server
   }
 
   const userBalanceEl = document.getElementById('claude-user-balance');
@@ -595,7 +683,6 @@
     if (!userBadge) return;
     chrome.storage.sync.get(['devMode'], (result) => {
       if (result.devMode) {
-        // Dev mode — hide badge and balance (no sign out needed)
         userBadge.style.display = 'none';
         if (userBalanceEl) userBalanceEl.style.display = 'none';
         return;
@@ -647,12 +734,11 @@
     if (authSuccess) authSuccess.style.display = 'none';
   }
 
-  // Auth overlay event listeners (OAuth only)
+  // Auth overlay event listeners
   document.getElementById('claude-oauth-google')?.addEventListener('click', () => handleOAuth('google'));
   document.getElementById('claude-oauth-apple')?.addEventListener('click', () => handleOAuth('apple'));
   document.getElementById('claude-oauth-github')?.addEventListener('click', () => handleOAuth('github'));
 
-  // User badge logout (disabled in dev mode)
   userBadge?.addEventListener('click', () => {
     chrome.storage.sync.get(['devMode'], (result) => {
       if (result.devMode) return;
@@ -661,7 +747,6 @@
   });
 
   // Init auth on load
-  // First-run disclaimer — show once, then never again
   chrome.storage.local.get(['disclaimerAccepted'], (result) => {
     if (result.disclaimerAccepted) {
       initAuth();
@@ -686,7 +771,6 @@
   clearBtn.addEventListener('click', clearChat);
   sendBtn.addEventListener('click', () => {
     if (isStreaming && !inputEl.value.trim()) {
-      // No text typed — just stop the stream
       stopCurrentStream();
     } else {
       sendMessage();
@@ -700,7 +784,6 @@
     }
   });
 
-  // Auto-resize textarea
   inputEl.addEventListener('input', () => {
     inputEl.style.height = 'auto';
     inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
@@ -710,7 +793,6 @@
   // Context meter logic
   // ---------------------------------------------------------------------------
   function estimateTokens(text) {
-    // Rough estimate: ~4 chars per token for English text
     return Math.ceil((text || '').length / 4);
   }
 
@@ -727,7 +809,7 @@
       } else if (Array.isArray(msg.content)) {
         for (const part of msg.content) {
           if (part.type === 'text') totalTokens += estimateTokens(part.text);
-          else if (part.type === 'image') totalTokens += 1600; // ~image token cost
+          else if (part.type === 'image') totalTokens += 1600;
         }
       }
     }
@@ -752,7 +834,6 @@
     }
   }
 
-  // Compact context: keep system messages and last 4 messages, summarize rest
   compactBtn.addEventListener('click', () => {
     if (conversationHistory.length < 4) return;
 
@@ -760,7 +841,6 @@
     const oldMessages = conversationHistory.slice(0, -keepCount);
     const recentMessages = conversationHistory.slice(-keepCount);
 
-    // Build a summary of compacted messages
     let summaryParts = [];
     for (const msg of oldMessages) {
       const text = typeof msg.content === 'string' ? msg.content : '[multimodal]';
@@ -775,6 +855,9 @@
     };
 
     conversationHistory = [summaryMsg, ...recentMessages];
+    if (activeSessionId && sessions.has(activeSessionId)) {
+      sessions.get(activeSessionId).history = conversationHistory;
+    }
     updateContextMeter();
     addSystemMessage('Context compacted: ' + oldMessages.length + ' messages summarized.');
   });
@@ -786,10 +869,9 @@
 
   fileInput.addEventListener('change', (e) => {
     handleFiles(e.target.files);
-    fileInput.value = ''; // reset so same file can be re-selected
+    fileInput.value = '';
   });
 
-  // Paste image support
   inputEl.addEventListener('paste', (e) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -807,7 +889,6 @@
     }
   });
 
-  // Drag & drop support
   inputEl.addEventListener('dragover', (e) => {
     e.preventDefault();
     inputEl.style.borderColor = 'rgba(124, 58, 237, 0.6)';
@@ -894,7 +975,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Helper: get active tab ID (uses cached value, refreshes if needed)
+  // Helper: get active tab ID
   // ---------------------------------------------------------------------------
   async function getActiveTabId() {
     if (currentTabId) return currentTabId;
@@ -903,7 +984,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Helper: get brief page context for the AI (URL, title)
+  // Helper: get brief page context for the AI
   // ---------------------------------------------------------------------------
   function getPageContext(tabId) {
     return new Promise((resolve) => {
@@ -921,7 +1002,7 @@
     });
   }
 
-  // Collect rich page context via CDP — formatted tab descriptor with visible elements + bounding boxes
+  // Collect rich page context via CDP
   async function collectRichPageContext(tabId) {
     const ctx = {};
     try {
@@ -929,7 +1010,6 @@
         expression: `(function(){
           var h = []; document.querySelectorAll('h1,h2,h3').forEach(function(e){ h.push(e.tagName + ': ' + e.textContent.trim().substring(0,80)); });
           var forms = document.querySelectorAll('form').length;
-          // All visible interactive elements with bounding boxes and center coords
           var els = []; document.querySelectorAll('a,button,input,textarea,select,[contenteditable="true"],[role="button"],[role="link"],[role="tab"],[role="menuitem"]').forEach(function(e){
             var r = e.getBoundingClientRect();
             if(r.width > 0 && r.height > 0 && r.top < window.innerHeight && r.bottom > 0) {
@@ -961,7 +1041,6 @@
     } catch (e) { /* non-critical */ }
 
     try {
-      // Cookies
       const cookieRes = await sendCdpCommand(tabId, 'Network.getCookies', {});
       if (cookieRes.status === 'ok' && cookieRes.result?.cookies) {
         ctx.cookies = cookieRes.result.cookies.slice(0, 10).map(function(c) {
@@ -990,33 +1069,45 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Clear chat
+  // Clear chat (end current session)
   // ---------------------------------------------------------------------------
   function clearChat() {
     // Kill persistent CLI process on server
-    var sidToKill = taskCtx ? taskCtx.sessionId : chatSessionId;
+    var sidToKill = activeSessionId || chatSessionId;
     if (sidToKill) {
       fetch(SERVER_URL + '/api/chat/kill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ sessionId: sidToKill }),
       }).catch(function() {});
+
+      // End session on server
+      fetch(SERVER_URL + '/api/user/chat-sessions/' + sidToKill + '/end', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      }).catch(function() {});
+
+      // Remove session container from DOM
+      if (sessions.has(sidToKill)) {
+        const session = sessions.get(sidToKill);
+        session.el.remove();
+        sessions.delete(sidToKill);
+      }
+      removeSessionFromSelector(sidToKill);
     }
 
+    // Reset state
     conversationHistory = [];
     chatSessionId = null;
-    messagesEl.innerHTML = getWelcomeHTML();
-    if (currentTabId) tabChats.delete(currentTabId);
-    if (taskCtx && taskCtx.originTab === currentTabId) {
-      if (taskCtx.container) taskCtx.container.remove();
-      taskCtx = null;
-    }
-    taskTabId = null;
+    activeSessionId = null;
     isStreaming = false;
     currentStreamText = '';
     pendingAttachments = [];
     renderAttachments();
-    updateContextMeter();
+
+    // Switch to welcome
+    switchToSession(null);
+
     chrome.runtime.sendMessage({ type: 'CLEAR_SESSION', tabId: currentTabId }, () => {
       if (chrome.runtime.lastError) { /* ignore */ }
     });
@@ -1038,44 +1129,51 @@
       sendBtn.title = 'Send';
       sendBtn.classList.remove('stop-mode');
     }
-    sendBtn.disabled = false; // never disable
+    sendBtn.disabled = false;
   }
 
   function stopCurrentStream() {
-    if (!isStreaming && !taskCtx) return;
-    // Signal the auto-execution loop to stop
+    if (!activeSessionId || !sessions.has(activeSessionId)) return;
+    const session = sessions.get(activeSessionId);
+    if (!session.isStreaming) return;
+
     autoExecCancelled = true;
-    // Abort the fetch SSE connection
-    if (currentAbortController) {
-      currentAbortController.abort();
-      currentAbortController = null;
+    if (session.abortController) {
+      session.abortController.abort();
+      session.abortController = null;
     }
-    // Also tell background.js to cancel any active stream
     chrome.runtime.sendMessage({ type: 'CANCEL_STREAM', tabId: taskTabId || currentTabId }, () => {
       if (chrome.runtime.lastError) { /* ignore */ }
     });
-    // Clean up background task context if running
-    if (taskCtx) {
-      taskCtx.container.remove();
-      taskCtx = null;
-    }
-    // Reset auto-execution state
     autoFollowUpCount = 0;
     taskTabId = null;
+    session.isStreaming = false;
     isStreaming = false;
     updateSendButton();
     addSystemMessage('Stopped by user.');
   }
 
   // ---------------------------------------------------------------------------
-  // Message queue — new messages wait for current stream to finish
+  // Message queue (per-session)
   // ---------------------------------------------------------------------------
-  const messageQueue = [];
+  // Queue is stored on each session object as session.messageQueue = []
+  // Global fallback for edge cases
+  const globalMessageQueue = [];
+
+  function getMessageQueue() {
+    if (activeSessionId && sessions.has(activeSessionId)) {
+      const s = sessions.get(activeSessionId);
+      if (!s.messageQueue) s.messageQueue = [];
+      return s.messageQueue;
+    }
+    return globalMessageQueue;
+  }
 
   function processQueue() {
-    if (isStreaming || messageQueue.length === 0) return;
-    const next = messageQueue.shift();
-    doSendMessage(next.text, next.attachments, true); // true = already shown in UI
+    const queue = getMessageQueue();
+    if (isStreaming || queue.length === 0) return;
+    const next = queue.shift();
+    doSendMessage(next.text, next.attachments, true);
   }
 
   // ---------------------------------------------------------------------------
@@ -1088,13 +1186,11 @@
     inputEl.value = '';
     inputEl.style.height = 'auto';
 
-    // If streaming, queue the message for later
     if (isStreaming) {
       const queuedAttachments = [...pendingAttachments];
       pendingAttachments = [];
       renderAttachments();
-      messageQueue.push({ text, attachments: queuedAttachments });
-      // Show the user message in UI immediately so they see it's queued
+      getMessageQueue().push({ text, attachments: queuedAttachments });
       const welcome = messagesEl.querySelector('.claude-welcome');
       if (welcome) welcome.remove();
       addMessageToUI('user', text);
@@ -1102,16 +1198,13 @@
       return;
     }
 
-    // Direct send (not streaming)
     doSendMessage(text, pendingAttachments, false);
     pendingAttachments = [];
     renderAttachments();
   }
 
   async function doSendMessage(text, attachments, alreadyShown) {
-    // Reset auto-execution counter on new user message
     autoFollowUpCount = 0;
-    // Lock the task to the tab where it was submitted
     let tabId = currentTabId;
     if (!tabId) {
       tabId = await getActiveTabId();
@@ -1122,14 +1215,12 @@
       return;
     }
 
-    // Check auth
     if (!authState.isAuthenticated) {
       showAuthOverlay();
       processQueue();
       return;
     }
 
-    // Handle commands
     const commandResult = await handleCommand(text, tabId);
     if (commandResult === true) { processQueue(); return; }
 
@@ -1139,11 +1230,32 @@
       extraContext = commandResult;
     }
 
+    // If no active session, create one (first message on this tab)
+    const isNewSession = !activeSessionId;
+    if (isNewSession) {
+      const tempId = 'pending-' + tabId + '-' + Date.now();
+      const el = createSessionContainer(tempId);
+      sessions.set(tempId, {
+        el: el,
+        history: [],
+        isStreaming: true,
+        streamText: '',
+        tabId: tabId,
+        model: modelSelect.value,
+        title: text.substring(0, 50),
+        loaded: true,
+        inputValue: '',
+        inputAttachments: [],
+      });
+      addSessionToSelector(tempId, text.substring(0, 30) + (text.length > 30 ? '...' : ''));
+      switchToSession(tempId);
+    }
+
     // Clear welcome message on first send
     const welcome = messagesEl.querySelector('.claude-welcome');
     if (welcome) welcome.remove();
 
-    // Add user message to UI — skip if already shown (queued messages)
+    // Add user message to UI
     const atts = attachments || [];
     if (!alreadyShown) {
       const msgEl = addMessageToUI('user', text);
@@ -1170,7 +1282,7 @@
       }
     }
 
-    // Build conversation entry — bare user message (like old system)
+    // Build conversation entry
     const fullUserContent = userMessage + (extraContext ? '\n\n[Context: ' + extraContext + ']' : '');
 
     const imageAttachments = atts.filter(a => a.isImage);
@@ -1202,12 +1314,11 @@
       conversationHistory.push({ role: 'user', content: historyContent });
     }
 
-    // Lock task to this tab — all follow-ups will target this tab even if user switches
+    // Lock task to this tab
     taskTabId = tabId;
 
-    // On first message (new session), collect rich page context for system prompt
-    // Old system did this via content.js gatherPageContext() + background.js prefetchCdpData()
-    const isFirstMessage = !(taskCtx ? taskCtx.sessionId : chatSessionId);
+    // On first message, collect rich page context
+    const isFirstMessage = isNewSession;
     let pageContext = null;
     if (isFirstMessage) {
       try {
@@ -1217,34 +1328,44 @@
       } catch (e) { /* non-critical */ }
     }
 
-    // Send via server SSE — only message + tabId, server manages context via CLI sessions
     _stepSendTime = Date.now();
     sendViaServerSSE(historyContent, tabId, 0, pageContext);
 
     isStreaming = true;
+    if (activeSessionId && sessions.has(activeSessionId)) {
+      sessions.get(activeSessionId).isStreaming = true;
+    }
     updateSendButton();
     updateContextMeter();
   }
 
   // ---------------------------------------------------------------------------
-  // Server SSE Chat — direct fetch to /api/chat with streaming
+  // Server SSE Chat
   // ---------------------------------------------------------------------------
-  async function sendViaServerSSE(userMessage, tabId, retryCount, pageContext, isExec) {
+  async function sendViaServerSSE(userMessage, tabId, retryCount, pageContext, isExec, forSessionId) {
     retryCount = retryCount || 0;
 
-    const isBackgroundTaskFollowUp = taskCtx && tabId === taskCtx.originTab;
+    // Capture target session in closure — this SSE connection belongs to this session
+    let targetSid = forSessionId || activeSessionId;
+
+    // Resolve the real sessionId for the server (pending- IDs are local-only)
+    const serverSessionId = (targetSid && !targetSid.startsWith('pending-')) ? targetSid : undefined;
+
     const body = {
       message: userMessage,
       tabId: tabId,
-      sessionId: (isBackgroundTaskFollowUp ? taskCtx.sessionId : chatSessionId) || undefined,
+      sessionId: serverSessionId,
     };
     if (pageContext) body.pageContext = pageContext;
     if (isExec) body.isExec = true;
 
     const controller = new AbortController();
-    currentAbortController = controller;
+    // Store controller on the session for stopCurrentStream()
+    if (targetSid && sessions.has(targetSid)) {
+      sessions.get(targetSid).abortController = controller;
+    }
 
-    onStreamStart();
+    onStreamStart(targetSid);
 
     try {
       const response = await fetch(SERVER_URL + '/api/chat', {
@@ -1261,36 +1382,33 @@
         const errorData = await response.json().catch(() => ({}));
         const status = response.status;
 
-        // Handle specific error codes
         if (status === 401 && retryCount < 1) {
-          // Token expired — try refresh
           const refreshed = await refreshAccessToken();
           if (refreshed) {
-            // Remove the streaming msg and retry
-            const streamingMsg = document.getElementById('claude-streaming-msg');
+            const container = getSessionContainer(targetSid);
+            const streamingMsg = container.querySelector('.streaming-msg');
             if (streamingMsg) streamingMsg.remove();
-            return sendViaServerSSE(userMessage, tabId, retryCount + 1);
+            return sendViaServerSSE(userMessage, tabId, retryCount + 1, pageContext, isExec, targetSid);
           } else {
             clearAuthState();
             showAuthOverlay();
-            onStreamError('Session expired. Please sign in again.');
+            onStreamError('Session expired. Please sign in again.', targetSid);
             return;
           }
         } else if (status === 402) {
-          onStreamError('Insufficient balance. Please add credits to continue.');
+          onStreamError('Insufficient balance. Please add credits to continue.', targetSid);
           return;
         } else if (status === 403) {
           clearAuthState();
           showAuthOverlay();
-          onStreamError('Access denied. Please sign in to continue.');
+          onStreamError('Access denied. Please sign in to continue.', targetSid);
           return;
         }
 
-        onStreamError(errorData.error || errorData.message || 'Server error ' + status);
+        onStreamError(errorData.error || errorData.message || 'Server error ' + status, targetSid);
         return;
       }
 
-      // Parse SSE stream
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -1313,26 +1431,47 @@
           try {
             const event = JSON.parse(data);
             if (event.type === 'session') {
-              // Assign session to the correct context based on which tab initiated this request
-              if (taskCtx && tabId === taskCtx.originTab) {
-                taskCtx.sessionId = event.sessionId;
+              const realSessionId = event.sessionId;
+
+              // Upgrade temp session to real session (using closure-captured targetSid)
+              if (targetSid && targetSid.startsWith('pending-') && sessions.has(targetSid)) {
+                const session = sessions.get(targetSid);
+                sessions.delete(targetSid);
+                session.el.dataset.sessionId = realSessionId;
+                sessions.set(realSessionId, session);
+
+                // Update selector
+                removeSessionFromSelector(targetSid);
+                addSessionToSelector(realSessionId, session.title);
+
+                // Update active refs if this is the currently viewed session
+                if (activeSessionId === targetSid) {
+                  activeSessionId = realSessionId;
+                  chatSessionId = realSessionId;
+                  if (sessionSelect) sessionSelect.value = realSessionId;
+                }
+
+                // Update closure target
+                targetSid = realSessionId;
               } else {
-                chatSessionId = event.sessionId;
+                // Not a pending upgrade — just record the sessionId
+                if (targetSid === activeSessionId) {
+                  chatSessionId = realSessionId;
+                }
               }
             } else if (event.type === 'delta') {
               fullResponse += event.text;
-              onStreamDelta(event.text);
+              onStreamDelta(event.text, targetSid);
             } else if (event.type === 'done' && !streamEnded) {
               const finalText = event.fullText || fullResponse;
-              // Update balance from server
               if (event.balance !== undefined && event.balance !== null && userBalanceEl) {
                 userBalanceEl.textContent = '$' + event.balance.toFixed(2);
                 userBalanceEl.style.display = 'inline-block';
               }
-              onStreamEnd(finalText, false);
+              onStreamEnd(finalText, false, targetSid);
               streamEnded = true;
             } else if (event.type === 'error') {
-              onStreamError(event.error || event.message || 'Stream error');
+              onStreamError(event.error || event.message || 'Stream error', targetSid);
               streamEnded = true;
             }
           } catch (e) { /* skip malformed JSON */ }
@@ -1340,23 +1479,21 @@
       }
 
       if (!streamEnded) {
-        onStreamEnd(fullResponse, false);
+        onStreamEnd(fullResponse, false, targetSid);
       }
 
     } catch (error) {
       if (error.name === 'AbortError') {
-        // User cancelled
-        onStreamEnd(currentStreamText, true);
+        const session = sessions.get(targetSid);
+        const streamText = session ? session.streamText || '' : '';
+        onStreamEnd(streamText, true, targetSid);
       } else {
-        // Connection error
         let errMsg = error.message || 'Unknown error';
         if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('ERR_CONNECTION_REFUSED')) {
           errMsg = 'Cannot connect to server at ' + SERVER_URL + '. Is the server running?';
         }
-        onStreamError(errMsg);
+        onStreamError(errMsg, targetSid);
       }
-    } finally {
-      currentAbortController = null;
     }
   }
 
@@ -1516,97 +1653,114 @@
   // ---------------------------------------------------------------------------
   // Streaming handlers
   // ---------------------------------------------------------------------------
-  function getTaskContainer() {
-    return taskCtx ? taskCtx.container : messagesEl;
-  }
-
-  function getTaskHistory() {
-    return taskCtx ? taskCtx.history : conversationHistory;
-  }
-
-  function onStreamStart() {
-    currentStreamText = '';
-    if (taskCtx) taskCtx.streamText = '';
-    autoExecCancelled = false; // Reset cancellation flag on new stream
-    const container = getTaskContainer();
+  function onStreamStart(targetSid) {
+    if (targetSid && sessions.has(targetSid)) {
+      sessions.get(targetSid).streamText = '';
+    }
+    autoExecCancelled = false;
+    const container = getSessionContainer(targetSid);
     const msgEl = createMessageElement('assistant', '');
-    msgEl.id = 'claude-streaming-msg';
+    msgEl.classList.add('streaming-msg');
     container.appendChild(msgEl);
-    if (!taskCtx) scrollToBottom();
+    if (targetSid === activeSessionId) {
+      isStreaming = true;
+      updateSendButton();
+      scrollToBottom();
+    }
   }
 
-  function onStreamContinue(iteration) {
-    isStreaming = true;
-    if (taskCtx) taskCtx.isStreaming = true;
-    updateSendButton();
-    const container = getTaskContainer();
-    let msgEl = document.getElementById('claude-streaming-msg');
+  function onStreamContinue(iteration, targetSid) {
+    if (targetSid && sessions.has(targetSid)) {
+      sessions.get(targetSid).isStreaming = true;
+    }
+    if (targetSid === activeSessionId) {
+      isStreaming = true;
+      updateSendButton();
+    }
+    const container = getSessionContainer(targetSid);
+    let msgEl = container.querySelector('.streaming-msg');
     if (!msgEl) {
       msgEl = createMessageElement('assistant', '');
-      msgEl.id = 'claude-streaming-msg';
+      msgEl.classList.add('streaming-msg');
       container.appendChild(msgEl);
     }
-    currentStreamText += '\n\n';
-    if (taskCtx) taskCtx.streamText = currentStreamText;
+    const session = sessions.get(targetSid);
+    const streamText = session ? (session.streamText || '') + '\n\n' : '\n\n';
+    if (session) session.streamText = streamText;
     const bubble = msgEl.querySelector('.claude-message-bubble');
     if (bubble) {
-      bubble.innerHTML = renderMarkdown(currentStreamText) +
+      bubble.innerHTML = renderMarkdown(streamText) +
         '<div class="claude-auto-exec-status">Executing step ' + iteration + '...</div>';
     }
-    if (!taskCtx) scrollToBottom();
+    if (targetSid === activeSessionId) scrollToBottom();
   }
 
-  function onStreamDelta(text) {
-    currentStreamText += text;
-    if (taskCtx) taskCtx.streamText = currentStreamText;
-    const msgEl = document.getElementById('claude-streaming-msg');
+  function onStreamDelta(text, targetSid) {
+    const session = sessions.get(targetSid);
+    const streamText = session ? (session.streamText || '') + text : text;
+    if (session) session.streamText = streamText;
+    const container = getSessionContainer(targetSid);
+    const msgEl = container.querySelector('.streaming-msg');
     if (msgEl) {
       const bubble = msgEl.querySelector('.claude-message-bubble');
       if (bubble) {
-        bubble.innerHTML = renderMarkdown(currentStreamText);
+        bubble.innerHTML = renderMarkdown(streamText);
         attachCodeActions(bubble);
       }
     }
-    if (!taskCtx) scrollToBottom();
+    if (targetSid === activeSessionId) scrollToBottom();
   }
 
   // ── Auto-execution loop state ──────────────────────────────────────────────
   let autoFollowUpCount = 0;
   const MAX_AUTO_FOLLOW_UPS = 40;
-  let taskTabId = null; // The tab where the current task was submitted
-  let autoExecCancelled = false; // Set by stop button to break auto-execution loop
+  let taskTabId = null;
+  let autoExecCancelled = false;
 
-  function finishTask() {
+  function finishTask(targetSid) {
     autoFollowUpCount = 0;
     taskTabId = null;
-    isStreaming = false;
-    if (taskCtx) {
-      taskCtx.isStreaming = false;
-      // Save final state to tabChats so it can be restored when user switches back
-      tabChats.set(taskCtx.originTab, {
-        history: JSON.parse(JSON.stringify(taskCtx.history)),
-        messagesHtml: taskCtx.container.innerHTML,
-        isStreaming: false,
-        streamText: '',
-        inputValue: '',
-        inputAttachments: [],
-        sessionId: taskCtx.sessionId,
-      });
-      taskCtx.container.remove();
-      taskCtx = null;
+
+    // Update session state
+    if (targetSid && sessions.has(targetSid)) {
+      const s = sessions.get(targetSid);
+      s.isStreaming = false;
+      s.streamText = '';
+      s.abortController = null;
     }
-    updateSendButton();
+
+    // Always update global isStreaming to reflect active session
+    if (targetSid === activeSessionId) {
+      isStreaming = false;
+      updateSendButton();
+      updateContextMeter();
+    }
+
+    // Process queued messages for the session that just finished
+    // (must happen even if user switched away from it)
+    if (targetSid && sessions.has(targetSid)) {
+      const s = sessions.get(targetSid);
+      if (s.messageQueue && s.messageQueue.length > 0) {
+        const next = s.messageQueue.shift();
+        // Switch back to this session to process the queued message
+        if (targetSid !== activeSessionId) {
+          switchToSession(targetSid);
+        }
+        doSendMessage(next.text, next.attachments, true);
+        return; // don't call processQueue again
+      }
+    }
+
     inputEl.focus();
     processQueue();
   }
 
-  function onStreamEnd(fullText, cancelled) {
-    updateSendButton();
-    const hist = getTaskHistory();
-
-    const msgEl = document.getElementById('claude-streaming-msg');
+  function onStreamEnd(fullText, cancelled, targetSid) {
+    const hist = getSessionHistory(targetSid);
+    const container = getSessionContainer(targetSid);
+    const msgEl = container.querySelector('.streaming-msg');
     if (msgEl) {
-      msgEl.removeAttribute('id');
+      msgEl.classList.remove('streaming-msg');
       if (fullText) {
         const bubble = msgEl.querySelector('.claude-message-bubble');
         if (bubble) {
@@ -1620,16 +1774,13 @@
       hist.push({ role: 'assistant', content: fullText });
     }
 
-    if (!taskCtx) {
+    if (targetSid === activeSessionId) {
       updateContextMeter();
       scrollToBottom();
     }
 
     // Auto-execute CDP/JS commands from AI response
-    // Use taskTabId (locked at submission time) so tab switches don't break the loop
     const execTabId = taskTabId || currentTabId;
-    // Lock the session ID so tab switches during auto-exec don't lose it
-    // Profiling: AI response time = time from SSE send to stream end
     const aiResponseMs = _stepSendTime ? (Date.now() - _stepSendTime) : 0;
 
     if (fullText && !cancelled && execTabId) {
@@ -1637,28 +1788,25 @@
       executeCdpFromResponse(fullText, execTabId).then(cdpResults => {
         const execMs = Date.now() - execStart;
         if (autoExecCancelled) {
-          addSystemMessage('Stopped by user.');
-          finishTask();
+          addSystemMessageToContainer(container, 'Stopped by user.');
+          finishTask(targetSid);
           return;
         }
         if (cdpResults && cdpResults.length > 0) {
           autoFollowUpCount++;
           if (autoFollowUpCount > MAX_AUTO_FOLLOW_UPS) {
-            addSystemMessage('Auto-execution limit reached (' + MAX_AUTO_FOLLOW_UPS + ' steps). Type a message to continue.');
-            finishTask();
+            addSystemMessageToContainer(container, 'Auto-execution limit reached (' + MAX_AUTO_FOLLOW_UPS + ' steps). Type a message to continue.');
+            finishTask(targetSid);
             return;
           }
 
-          // Profiling summary for this step
           const stepTotalMs = aiResponseMs + execMs;
           const profile = 'AI: ' + (aiResponseMs / 1000).toFixed(1) + 's | Exec: ' + (execMs / 1000).toFixed(1) + 's | Total: ' + (stepTotalMs / 1000).toFixed(1) + 's';
 
-          // Show execution results in chat so user can see what was sent to AI
           const chatResults = formatCdpResultsForChat(cdpResults);
-          addSystemMessage('Step ' + autoFollowUpCount + ' executed — ' + cdpResults.length + ' command(s) — ' + profile + chatResults);
+          addSystemMessageToContainer(container, 'Step ' + autoFollowUpCount + ' executed — ' + cdpResults.length + ' command(s) — ' + profile + chatResults);
 
-          // Update conversation history: append results to assistant message
-          const curHist = getTaskHistory();
+          const curHist = getSessionHistory(targetSid);
           if (curHist.length > 0) {
             const last = curHist[curHist.length - 1];
             if (last.role === 'assistant') {
@@ -1666,25 +1814,27 @@
             }
           }
 
-          // Send results back to AI for next step (marked as exec, not user)
           const followUpPrompt = formatCdpResultsAsPrompt(cdpResults);
           curHist.push({ role: 'user', content: followUpPrompt });
 
-          isStreaming = true;
-          if (taskCtx) taskCtx.isStreaming = true;
-          updateSendButton();
+          if (targetSid && sessions.has(targetSid)) {
+            sessions.get(targetSid).isStreaming = true;
+          }
+          if (targetSid === activeSessionId) {
+            isStreaming = true;
+            updateSendButton();
+          }
           _stepSendTime = Date.now();
-          sendViaServerSSE(followUpPrompt, execTabId, 0, null, true);
+          sendViaServerSSE(followUpPrompt, execTabId, 0, null, true, targetSid);
         } else {
-          // No CDP blocks — task is done
-          finishTask();
+          finishTask(targetSid);
         }
       }).catch(e => {
         console.error('CDP auto-exec error:', e);
-        finishTask();
+        finishTask(targetSid);
       });
     } else {
-      finishTask();
+      finishTask(targetSid);
     }
   }
 
@@ -1696,7 +1846,6 @@
 
     const results = [];
 
-    // Parse ALL blocks in document order
     const allBlocksRegex = /```(cdp|js|javascript|ext)\s*\n([\s\S]*?)```/g;
     let match;
     while ((match = allBlocksRegex.exec(responseText)) !== null) {
@@ -1705,7 +1854,6 @@
       const rawCmd = match[2].trim();
 
       if (blockType === 'ext') {
-        // ── ext block: tab management ──
         try {
           const cmd = JSON.parse(rawCmd);
           const res = await handleExtInAutoExec(cmd);
@@ -1719,9 +1867,6 @@
         }
 
       } else if (blockType === 'js') {
-        // ── js block: read DOM via Runtime.evaluate ──
-        // Match old behavior: just replace const/let with var, NO IIFE wrapping
-        // IIFE wrapping breaks return values (last expression not returned without explicit return)
         try {
           let safeCode = rawCmd.replace(/\b(const|let)\s+/g, 'var ');
           const res = await sendCdpCommand(tabId, 'Runtime.evaluate', {
@@ -1758,13 +1903,11 @@
         }
 
       } else if (blockType === 'cdp') {
-        // ── cdp block: CDP protocol commands ──
         try {
           let cmd;
           try {
             cmd = JSON.parse(rawCmd);
           } catch (jsonErr) {
-            // Recovery: bare JS in cdp block — just var-replace, no IIFE
             if (/^(await\s|document\.|window\.|var |let |const |function |\(|Array\.)/.test(rawCmd)) {
               let safeExpr = rawCmd.replace(/\b(const|let)\s+/g, 'var ');
               const res = await sendCdpCommand(tabId, 'Runtime.evaluate', { expression: safeExpr, returnByValue: true, awaitPromise: true });
@@ -1776,7 +1919,6 @@
               }
               continue;
             }
-            // Recovery: "Method.name { params }" shorthand
             const methodMatch = rawCmd.match(/^([A-Z][a-zA-Z]+\.[a-zA-Z]+)\s*(\{[\s\S]*\})?$/);
             if (methodMatch) {
               const method = methodMatch[1];
@@ -1791,7 +1933,6 @@
             results.push({ type: 'cdp_error', method: rawCmd.substring(0, 50), error: 'Invalid JSON. Use: {"method": "...", "params": {...}}' });
             continue;
           }
-          // ext command in cdp block — route it
           if (cmd.action && !cmd.method) {
             const res = await handleExtInAutoExec(cmd);
             results.push({ type: 'ext', action: cmd.action, result: JSON.stringify(res, null, 2).substring(0, 5000) });
@@ -1823,16 +1964,11 @@
     return results.length > 0 ? results : null;
   }
 
-  // Handle ext commands during auto-execution:
-  // switchTab/activateTab brings the tab to foreground AND targets it for CDP
   async function handleExtInAutoExec(cmd) {
     const action = (cmd.action || '').toLowerCase().replace(/[_\-\s]/g, '');
-    // Tab switching: activate the tab in Chrome AND set it as CDP target
-    // Also auto-fetch DOM snapshot so AI knows what's on the page without wasting a step
     if (['switchtab', 'activatetab', 'focustab', 'activate', 'focus', 'selecttab'].includes(action)) {
       const tid = cmd.tabId || cmd.id;
       if (!tid) return { error: 'No tabId provided for ' + cmd.action };
-      // Actually activate the tab in Chrome (bring to foreground)
       const tabInfo = await new Promise(resolve => {
         chrome.tabs.update(tid, { active: true }, (tab) => {
           if (chrome.runtime.lastError) {
@@ -1843,7 +1979,6 @@
         });
       });
       if (tabInfo.error) return tabInfo;
-      // Auto-fetch page DOM snapshot so AI gets context immediately
       try {
         const domRes = await sendCdpCommand(tid, 'Runtime.evaluate', {
           expression: '(function(){ var t = document.title; var u = window.location.href; var text = (document.body && document.body.innerText || "").slice(0, 1000); return JSON.stringify({title: t, url: u, bodyText: text}); })()',
@@ -1857,10 +1992,9 @@
             tabInfo.pageSnapshot = domRes.result.result.value;
           }
         }
-      } catch (e) { /* non-critical — AI can still fetch DOM manually */ }
+      } catch (e) { /* non-critical */ }
       return tabInfo;
     }
-    // All other ext commands (listTabs, createTab, closeTab) go through normally
     return executeExtCommand(cmd);
   }
 
@@ -1914,23 +2048,28 @@
     return prompt;
   }
 
-  function onStreamError(error) {
-    isStreaming = false;
-    if (taskCtx) taskCtx.isStreaming = false;
-    updateSendButton();
+  function onStreamError(error, targetSid) {
+    if (targetSid && sessions.has(targetSid)) {
+      const s = sessions.get(targetSid);
+      s.isStreaming = false;
+      s.abortController = null;
+    }
+    if (targetSid === activeSessionId) {
+      isStreaming = false;
+      updateSendButton();
+    }
 
-    const streamingMsg = document.getElementById('claude-streaming-msg');
+    const container = getSessionContainer(targetSid);
+    const streamingMsg = container.querySelector('.streaming-msg');
     if (streamingMsg) streamingMsg.remove();
 
-    const container = getTaskContainer();
     const errorEl = document.createElement('div');
     errorEl.className = 'claude-error-msg';
     errorEl.innerHTML = ICONS.error + '<span>' + escapeHtml(error) + '</span>';
     container.appendChild(errorEl);
-    if (!taskCtx) scrollToBottom();
-    inputEl.focus();
+    if (targetSid === activeSessionId) scrollToBottom();
 
-    // Process any queued messages
+    inputEl.focus();
     processQueue();
   }
 
@@ -1945,12 +2084,15 @@
   }
 
   function addSystemMessage(text) {
+    addSystemMessageToContainer(messagesEl, text);
+  }
+
+  function addSystemMessageToContainer(container, text) {
     const el = document.createElement('div');
     el.className = 'claude-system-msg';
     el.textContent = text;
-    const container = getTaskContainer();
     container.appendChild(el);
-    if (!taskCtx) scrollToBottom();
+    if (container === messagesEl) scrollToBottom();
   }
 
   function createMessageElement(role, text) {
@@ -1977,7 +2119,6 @@
 
     wrapper.appendChild(bubble);
 
-    // Timestamp
     var timeEl = document.createElement('div');
     timeEl.className = 'claude-message-time';
     var now = new Date();
@@ -1985,7 +2126,6 @@
     wrapper.appendChild(timeEl);
 
     if (role === 'assistant') {
-      // Add copy button for entire message
       const actions = document.createElement('div');
       actions.className = 'claude-message-actions';
       const copyMsgBtn = document.createElement('button');
@@ -2048,7 +2188,6 @@
       }
     });
 
-    // Make inline code selectors clickable for highlighting
     bubble.querySelectorAll('code:not(.claude-code-block code)').forEach(function (codeEl) {
       const codeText = codeEl.textContent;
       if (/^[.#\[\w][\w\-.\[\]#:= >"'*+~,()]+$/.test(codeText) && codeText.length < 100) {
@@ -2076,7 +2215,6 @@
 
     let html = escapeHtml(text);
 
-    // Collapse execution result blocks
     html = html.replace(/---\n\*\*(CDP Result|JS Result|CDP Error|JS Error)\*\*[^\n]*\n```(?:\w*)\n([\s\S]*?)```/g, function (match, label, content) {
       const shortLabel = label.replace(' Result', '').replace(' Error', ' Err');
       const icon = label.includes('Error') ? '&#9888;' : '&#9889;';
@@ -2097,7 +2235,6 @@
         '</summary><div class="claude-tool-content">' + escapeHtml(errMsg) + '</div></details>';
     });
 
-    // Code blocks
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function (match, lang, code) {
       const l = (lang || '').toLowerCase();
       const highlighted = highlightSyntax(code.trim(), lang);
@@ -2197,105 +2334,6 @@
     }
 
     return code;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Listen for messages from background.js
-  // ---------------------------------------------------------------------------
-  chrome.runtime.onMessage.addListener(function (message) {
-    const msgTabId = message.tabId;
-
-    // If message is for a different tab, buffer it instead of displaying
-    if (msgTabId && msgTabId !== currentTabId) {
-      bufferStreamMessage(msgTabId, message);
-      return;
-    }
-
-    switch (message.type) {
-      case 'STREAM_START':
-        onStreamStart();
-        break;
-      case 'STREAM_CONTINUE':
-        onStreamContinue(message.iteration);
-        break;
-      case 'STREAM_DELTA':
-        onStreamDelta(message.text);
-        break;
-      case 'STREAM_END':
-        onStreamEnd(message.fullText, message.cancelled);
-        break;
-      case 'STREAM_ERROR':
-        onStreamError(message.error);
-        break;
-    }
-  });
-
-  // Buffer stream messages for background tabs
-  function bufferStreamMessage(tabId, message) {
-    if (!tabStreamBuffers.has(tabId)) {
-      tabStreamBuffers.set(tabId, { streamText: '', ended: false, fullText: '', error: null });
-    }
-    const buf = tabStreamBuffers.get(tabId);
-    switch (message.type) {
-      case 'STREAM_START':
-        buf.streamText = '';
-        buf.ended = false;
-        buf.error = null;
-        break;
-      case 'STREAM_CONTINUE':
-        // Auto-follow-up continuing — keep buffer alive
-        buf.streamText += '\n\n';
-        break;
-      case 'STREAM_DELTA':
-        buf.streamText += message.text;
-        break;
-      case 'STREAM_END':
-        buf.ended = true;
-        buf.fullText = message.fullText || buf.streamText;
-        // Save completed response into that tab's chat history and rebuild HTML
-        const saved = tabChats.get(tabId);
-        if (saved) {
-          if (buf.fullText) {
-            saved.history.push({ role: 'assistant', content: buf.fullText });
-          }
-          // Rebuild the messagesHtml so switching back shows the finished response
-          saved.messagesHtml = rebuildMessagesHtml(saved.history);
-          saved.isStreaming = false;
-        }
-        tabStreamBuffers.delete(tabId);
-        break;
-      case 'STREAM_ERROR':
-        buf.ended = true;
-        buf.error = message.error;
-        const savedErr = tabChats.get(tabId);
-        if (savedErr) {
-          savedErr.messagesHtml = rebuildMessagesHtml(savedErr.history);
-          savedErr.isStreaming = false;
-        }
-        tabStreamBuffers.delete(tabId);
-        break;
-    }
-  }
-
-  // Rebuild messages HTML from conversation history (used when background tab stream finishes)
-  function rebuildMessagesHtml(history) {
-    if (!history || history.length === 0) return getWelcomeHTML();
-    let html = '';
-    for (const msg of history) {
-      const text = typeof msg.content === 'string' ? msg.content : '[multimodal content]';
-      const wrapper = document.createElement('div');
-      wrapper.className = 'claude-message claude-message-' + msg.role;
-      const bubble = document.createElement('div');
-      bubble.className = 'claude-message-bubble';
-      if (msg.role === 'user') {
-        bubble.textContent = text;
-      } else {
-        bubble.innerHTML = renderMarkdown(text);
-      }
-      wrapper.appendChild(bubble);
-      html += wrapper.outerHTML;
-    }
-    return html;
   }
 
   // ---------------------------------------------------------------------------
