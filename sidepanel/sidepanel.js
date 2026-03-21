@@ -135,6 +135,9 @@
       updateCurrentTab();
     }
   });
+  // Refresh session selector when tabs open/close
+  chrome.tabs.onRemoved.addListener(() => updateSessionSelector());
+  chrome.tabs.onCreated.addListener(() => updateSessionSelector());
 
   // Init current tab
   updateCurrentTab();
@@ -163,7 +166,8 @@
       s.streamText = currentStreamText;
       s.inputValue = inputEl.value;
       s.inputAttachments = [...pendingAttachments];
-      s.model = modelSelect.value; // save current model for this session
+      s.model = modelSelect.value;
+      s.tabUrl = currentTabInfo.url || s.tabUrl; // save URL for tab restore matching
     }
   }
 
@@ -223,10 +227,13 @@
       if (isOtherTab) {
         inputEl.disabled = true;
         inputEl.placeholder = 'Switch to the original tab to continue this chat';
+        sendBtn.disabled = true;
+        sendBtn.style.opacity = '0.3';
+        sendBtn.style.pointerEvents = 'none';
         if (!disabledBanner) {
           var banner = document.createElement('div');
           banner.className = 'session-disabled-banner';
-          banner.style.cssText = 'padding:8px 12px;background:rgba(251,191,36,0.1);border-bottom:1px solid rgba(251,191,36,0.2);font-size:12px;color:#fbbf24;text-align:center;cursor:pointer;';
+          banner.style.cssText = 'padding:8px 12px;background:rgba(251,191,36,0.1);border-bottom:1px solid rgba(251,191,36,0.2);font-size:12px;color:#fbbf24;text-align:center;cursor:pointer;position:sticky;top:0;z-index:10;';
           banner.textContent = 'This chat is on another tab. Click to switch.';
           banner.addEventListener('click', function() {
             chrome.tabs.update(session.tabId, { active: true });
@@ -236,6 +243,9 @@
       } else {
         inputEl.disabled = false;
         inputEl.placeholder = 'Message...';
+        sendBtn.disabled = false;
+        sendBtn.style.opacity = '';
+        sendBtn.style.pointerEvents = '';
         if (disabledBanner) disabledBanner.remove();
       }
     }
@@ -286,17 +296,20 @@
     while (sessionSelect.options.length > 1) {
       sessionSelect.options[1].remove();
     }
-    // Get all open tab IDs
+    // Get open tab IDs
     var openTabIds = new Set();
     try {
       var tabs = await chrome.tabs.query({ currentWindow: true });
       tabs.forEach(function(t) { openTabIds.add(t.id); });
-    } catch (e) { /* fallback: show all */ openTabIds = null; }
-    // Add only sessions whose tab is still open (or has no tab — current session)
+    } catch (e) { openTabIds = null; }
+    // Only show sessions whose tab still exists — remove dead ones
     for (const [sid, s] of sessions) {
-      if (!openTabIds || !s.tabId || openTabIds.has(s.tabId)) {
-        addSessionToSelector(sid, s.title);
+      if (s.tabId && openTabIds && !openTabIds.has(s.tabId)) {
+        // Tab closed — remove session from memory
+        sessions.delete(sid);
+        continue;
       }
+      addSessionToSelector(sid, s.title);
     }
     sessionSelect.value = activeSessionId || '';
   }
