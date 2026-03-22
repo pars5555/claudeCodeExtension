@@ -824,8 +824,13 @@
     updateUserBadge();
     syncModelFromServer();
     pingServer();
-    // Load active sessions from server, then check if current tab has a session
-    loadUserSessions().then(() => updateCurrentTab());
+    // Load active sessions from server, then switch to current tab's session if found
+    loadUserSessions().then(() => {
+      const sessionForTab = findSessionByTabId(currentTabId);
+      if (sessionForTab && !activeSessionId) {
+        switchToSession(sessionForTab);
+      }
+    });
   }
 
   const userBalanceEl = document.getElementById('wai-user-balance');
