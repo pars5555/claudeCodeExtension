@@ -99,16 +99,16 @@
     currentTabId = tab.id;
     currentTabInfo = { url: tab.url || '', title: tab.title || '' };
 
-    if (tabChanged) {
+    if (tabChanged || oldTabId === null) {
       // Save current session state before switching
-      saveActiveSessionState();
+      if (tabChanged) saveActiveSessionState();
 
       // Find session associated with the new tab
       const sessionForTab = findSessionByTabId(tab.id);
       if (sessionForTab) {
         switchToSession(sessionForTab);
-      } else {
-        // No session for this tab — show welcome
+      } else if (tabChanged) {
+        // No session for this tab — show welcome (only on tab switch, not initial load)
         switchToSession(null);
       }
     }
@@ -824,7 +824,8 @@
     updateUserBadge();
     syncModelFromServer();
     pingServer();
-    loadUserSessions(); // Load active sessions from server
+    // Load active sessions from server, then check if current tab has a session
+    loadUserSessions().then(() => updateCurrentTab());
   }
 
   const userBalanceEl = document.getElementById('wai-user-balance');
