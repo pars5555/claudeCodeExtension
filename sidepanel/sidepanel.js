@@ -219,6 +219,11 @@
           }
         });
       }
+      // Reset prompt selector to general for new chats
+      if (promptSelect) {
+        promptSelect.value = 'general';
+        _prevPromptType = 'general';
+      }
     } else {
       // Show session
       welcomeContainer.classList.remove('active');
