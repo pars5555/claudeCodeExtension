@@ -13,7 +13,8 @@
     "webRequest",
     "alarms",
     "sidePanel",
-    "identity"
+    "identity",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "<all_urls>"

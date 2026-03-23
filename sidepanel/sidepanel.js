@@ -165,7 +165,7 @@
     sessionsWrapper.appendChild(el);
     // Scroll listener per container
     el.addEventListener('scroll', function () {
-      var atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      var atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
       _autoScroll = atBottom;
     });
     return el;
@@ -180,6 +180,7 @@
       s.inputValue = inputEl.value;
       s.inputAttachments = [...pendingAttachments];
       s.model = modelSelect.value;
+      s.promptType = promptSelect.value || 'general';
       s.tabUrl = currentTabInfo.url || s.tabUrl; // save URL for tab restore matching
     }
   }
@@ -238,6 +239,11 @@
       if (session.model && modelSelect) {
         modelSelect.value = session.model;
         _prevModel = session.model;
+      }
+      // Restore session's prompt type
+      if (session.promptType && promptSelect) {
+        promptSelect.value = session.promptType;
+        _prevPromptType = session.promptType;
       }
       // Check if session belongs to a different tab — disable input
       var isOtherTab = session.tabId && session.tabId !== currentTabId;
@@ -436,18 +442,28 @@
 
   let _autoScroll = true;
 
-  function scrollToBottom() {
-    if (!_autoScroll) return;
+  function scrollToBottom(force) {
+    if (!force && !_autoScroll) return;
+    if (force) _autoScroll = true;
     requestAnimationFrame(() => {
       if (messagesEl) {
         messagesEl.scrollTop = messagesEl.scrollHeight;
+        // Double-RAF: ensures scroll after images/code blocks finish layout
+        requestAnimationFrame(() => {
+          if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+        });
       }
     });
   }
 
   function copyToClipboard(text) {
+    // In Chrome extension sidepanels, navigator.clipboard often fails
+    // because the panel may not be focused or in a secure context.
+    // Try clipboard API first, fall back to execCommand.
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(text).catch(function () {
+      return navigator.clipboard.writeText(text).then(function() {
+        return true;
+      }).catch(function () {
         return fallbackCopy(text);
       });
     }
@@ -460,6 +476,7 @@
       textarea.value = text;
       textarea.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
       document.body.appendChild(textarea);
+      textarea.focus();
       textarea.select();
       try {
         document.execCommand('copy');
@@ -492,6 +509,7 @@
   const sendBtn = document.getElementById('wai-send-btn');
   const clearBtn = document.getElementById('wai-clear-btn');
   const modelSelect = document.getElementById('wai-model-select');
+  const promptSelect = document.getElementById('wai-prompt-select');
   const sessionSelect = document.getElementById('wai-session-select');
   const contextFill = document.getElementById('wai-context-fill');
   const contextLabel = document.getElementById('wai-context-label');
@@ -512,7 +530,7 @@
 
   // Init auto-scroll listener for welcome container
   welcomeContainer.addEventListener('scroll', function () {
-    var atBottom = welcomeContainer.scrollHeight - welcomeContainer.scrollTop - welcomeContainer.clientHeight < 40;
+    var atBottom = welcomeContainer.scrollHeight - welcomeContainer.scrollTop - welcomeContainer.clientHeight < 150;
     _autoScroll = atBottom;
   });
 
@@ -575,6 +593,48 @@
         body: JSON.stringify({ value: model }),
       });
     } catch (e) { /* ignore */ }
+  });
+
+  // ── Prompt type selector ──────────────────────────────────────────────────
+  var _prevPromptType = 'general';
+
+  async function syncPromptsFromServer() {
+    try {
+      var resp = await fetch(SERVER_URL + '/api/user/prompts', { headers: getAuthHeaders() });
+      if (!resp.ok) return;
+      var data = await resp.json();
+      if (data.hasMultiple && data.prompts && data.prompts.length > 1) {
+        promptSelect.innerHTML = '';
+        data.prompts.forEach(function(p) {
+          var opt = document.createElement('option');
+          opt.value = p.type;
+          opt.textContent = p.description || p.name || p.type;
+          promptSelect.appendChild(opt);
+        });
+        promptSelect.style.display = '';
+      } else {
+        promptSelect.style.display = 'none';
+        promptSelect.innerHTML = '<option value="general">General</option>';
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  promptSelect.addEventListener('change', async function() {
+    var promptType = promptSelect.value;
+    var hasActiveChat = activeSessionId;
+
+    if (hasActiveChat) {
+      var confirmed = await showConfirm('Changing prompt mode will end the current chat. Continue?');
+      if (!confirmed) {
+        promptSelect.value = _prevPromptType;
+        return;
+      }
+      clearChat();
+      promptSelect.value = promptType;
+      setTimeout(function() { promptSelect.value = promptType; }, 100);
+    }
+
+    _prevPromptType = promptType;
   });
 
   // Session selector — switch between chat sessions
@@ -817,6 +877,7 @@
     if (authOverlay) authOverlay.style.display = 'none';
     updateUserBadge();
     syncModelFromServer();
+    syncPromptsFromServer();
     pingServer();
     // Load active sessions from server, then switch to current tab's session if found
     loadUserSessions().then(() => {
@@ -1444,7 +1505,8 @@
     const welcome = messagesEl.querySelector('.wai-welcome');
     if (welcome) welcome.remove();
 
-    // Add user message to UI
+    // Add user message to UI — force scroll to bottom when user sends
+    scrollToBottom(true);
     const atts = attachments || [];
     if (!alreadyShown) {
       const msgEl = addMessageToUI('user', text);
@@ -1547,6 +1609,10 @@
     };
     if (pageContext) body.pageContext = pageContext;
     if (isExec) body.isExec = true;
+    var currentPromptType = promptSelect.value || 'general';
+    if (currentPromptType && currentPromptType !== 'general') {
+      body.promptType = currentPromptType;
+    }
 
     const controller = new AbortController();
     // Store controller on the session for stopCurrentStream()
@@ -2063,6 +2129,9 @@
             returnByValue: true,
             awaitPromise: true,
             generatePreview: true,
+            userGesture: true,
+            allowUnsafeEvalBlockedByCSP: true,
+            replMode: true,
           });
           if (res.status === 'ok') {
             const result = res.result;
@@ -2099,7 +2168,7 @@
           } catch (jsonErr) {
             if (/^(await\s|document\.|window\.|var |let |const |function |\(|Array\.)/.test(rawCmd)) {
               let safeExpr = rawCmd.replace(/\b(const|let)\s+/g, 'var ');
-              const res = await sendCdpCommand(tabId, 'Runtime.evaluate', { expression: safeExpr, returnByValue: true, awaitPromise: true });
+              const res = await sendCdpCommand(tabId, 'Runtime.evaluate', { expression: safeExpr, returnByValue: true, awaitPromise: true, allowUnsafeEvalBlockedByCSP: true, userGesture: true });
               if (res.status === 'ok' && !res.result?.exceptionDetails) {
                 const val = res.result?.result?.value;
                 results.push({ type: 'js', result: (val !== undefined ? (typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)) : '(undefined)').substring(0, 5000) });
@@ -2147,6 +2216,7 @@
         } catch (e) {
           results.push({ type: 'cdp_error', method: rawCmd.substring(0, 50), error: e.message });
         }
+
       }
     }
 
@@ -2233,7 +2303,7 @@
       if (r.type === 'ext') prompt += 'Extension ' + r.action + ' returned:\n' + r.result + '\n\n';
       if (r.type === 'ext_error') prompt += 'Extension ' + r.action + ' ERROR: ' + r.error + '\n\n';
     }
-    prompt += 'Based on these results, continue with the task. If the task is complete, summarize what was done. If more steps are needed, provide the next CDP/JS commands to execute.';
+    prompt += 'Based on these results, continue with the task. If the task is complete, summarize what was done. If more steps are needed, provide the next commands to execute.';
     return prompt;
   }
 
@@ -2399,8 +2469,22 @@
   // ---------------------------------------------------------------------------
   const AGENT_LANGS = ['cdp', 'js', 'javascript', 'json', 'query'];
 
+  function sanitizeSensitiveData(text) {
+    if (!text) return text;
+    // Strip SSH commands with passwords
+    text = text.replace(/sshpass\s+-p\s+\S+\s+ssh[^\n"`)]*(?=[\n"`)|\s])/g, '[sandbox command]');
+    // Strip standalone sshpass commands
+    text = text.replace(/sshpass\s+-p\s+\S+/g, '[sandbox]');
+    // Strip SSH connection strings with IPs
+    text = text.replace(/ssh\s+(?:-o\s+\S+\s+)*\w+@\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:\s+-p\s+\d+)?/g, '[sandbox ssh]');
+    // Strip sandbox password if leaked
+    text = text.replace(/password:\s*sandbox/gi, 'password: [hidden]');
+    return text;
+  }
+
   function renderMarkdown(text) {
     if (!text) return '';
+    text = sanitizeSensitiveData(text);
 
     let html = escapeHtml(text);
 

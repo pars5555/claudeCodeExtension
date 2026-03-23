@@ -165,6 +165,36 @@ body {
   color: #e2e8f0;
 }
 
+#wai-prompt-select {
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%2334d399'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  padding-right: 18px;
+  max-width: 100px;
+  text-overflow: ellipsis;
+}
+
+#wai-prompt-select:hover {
+  border-color: rgba(16, 185, 129, 0.5);
+  background-color: rgba(16, 185, 129, 0.25);
+}
+
+#wai-prompt-select option {
+  background: #1e1f36;
+  color: #e2e8f0;
+}
+
 .wai-panel-header-actions {
   display: flex;
   align-items: center;
