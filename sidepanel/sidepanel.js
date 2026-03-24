@@ -1615,7 +1615,7 @@
   // ---------------------------------------------------------------------------
   // Server SSE Chat
   // ---------------------------------------------------------------------------
-  async function sendViaServerSSE(userMessage, tabId, retryCount, pageContext, isExec, forSessionId) {
+  async function sendViaServerSSE(userMessage, tabId, retryCount, pageContext, isExec, forSessionId, images) {
     retryCount = retryCount || 0;
 
     // Capture target session in closure — this SSE connection belongs to this session
@@ -1631,6 +1631,7 @@
     };
     if (pageContext) body.pageContext = pageContext;
     if (isExec) body.isExec = true;
+    if (images && images.length > 0) body.images = images;
     var currentPromptType = promptSelect.value || 'general';
     if (currentPromptType && currentPromptType !== 'general') {
       body.promptType = currentPromptType;
@@ -1990,7 +1991,7 @@
 
   // ── Auto-execution loop state ──────────────────────────────────────────────
   let autoFollowUpCount = 0;
-  const MAX_AUTO_FOLLOW_UPS = 40;
+  const MAX_AUTO_FOLLOW_UPS = 100;
   let taskTabId = null;
   let autoExecCancelled = false;
 
@@ -2003,6 +2004,12 @@
     if (cleanupTabId) {
       chrome.runtime.sendMessage({ type: 'CDP_CLEANUP', tabId: cleanupTabId });
     }
+
+    // Close sandbox SSH session (auto-reopens on next bash command)
+    fetch(SERVER_URL + '/api/tools/close', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    }).catch(function() {});
 
     taskTabId = null;
 
@@ -2100,11 +2107,13 @@
           }
 
           // Flush buffered CDP network events and append to results
-          var followUpPrompt = formatCdpResultsAsPrompt(cdpResults);
+          var formatted = formatCdpResultsAsPrompt(cdpResults);
+          var followUpText = formatted.text;
+          var followUpImages = formatted.images || [];
           flushNetEvents(execTabId).then(function(netSummary) {
-            if (netSummary) followUpPrompt += '\n\n' + netSummary;
+            if (netSummary) followUpText += '\n\n' + netSummary;
             var curHist2 = getSessionHistory(targetSid);
-            curHist2.push({ role: 'user', content: followUpPrompt });
+            curHist2.push({ role: 'user', content: followUpText });
 
             if (targetSid && sessions.has(targetSid)) {
               sessions.get(targetSid).isStreaming = true;
@@ -2114,7 +2123,7 @@
               updateSendButton();
             }
             _stepSendTime = Date.now();
-            sendViaServerSSE(followUpPrompt, execTabId, 0, null, true, targetSid);
+            sendViaServerSSE(followUpText, execTabId, 0, null, true, targetSid, followUpImages);
           });
         } else {
           finishTask(targetSid);
@@ -2136,11 +2145,12 @@
 
     const results = [];
 
-    const allBlocksRegex = /```(cdp|js|javascript|ext)\s*\n([\s\S]*?)```/g;
+    const allBlocksRegex = /```(cdp|js|javascript|ext|bash|sh|shell|webfetch|websearch)\s*\n([\s\S]*?)```/g;
     let match;
     while ((match = allBlocksRegex.exec(responseText)) !== null) {
       if (autoExecCancelled) return results;
-      const blockType = match[1] === 'javascript' ? 'js' : match[1];
+      var blockType = match[1] === 'javascript' ? 'js' : match[1];
+      if (blockType === 'sh' || blockType === 'shell') blockType = 'bash';
       const rawCmd = match[2].trim();
 
       if (blockType === 'ext') {
@@ -2255,10 +2265,47 @@
           results.push({ type: 'cdp_error', method: rawCmd.substring(0, 50), error: e.message });
         }
 
+      } else if (blockType === 'bash') {
+        try {
+          var bashRes = await executeServerTool('bash', rawCmd);
+          results.push({ type: 'bash', command: rawCmd.substring(0, 100), result: bashRes.substring(0, 10000) });
+        } catch (e) {
+          results.push({ type: 'bash_error', command: rawCmd.substring(0, 100), error: e.message });
+        }
+
+      } else if (blockType === 'webfetch' || blockType === 'websearch') {
+        try {
+          var fetchRes = await executeServerTool(blockType, rawCmd);
+          results.push({ type: blockType, url: rawCmd.substring(0, 200), result: fetchRes.substring(0, 10000) });
+        } catch (e) {
+          results.push({ type: blockType + '_error', url: rawCmd.substring(0, 200), error: e.message });
+        }
       }
     }
 
     return results.length > 0 ? results : null;
+  }
+
+  async function executeServerTool(tool, command) {
+    var resp = await fetch(SERVER_URL + '/api/tools/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ tool: tool, command: command }),
+    });
+    if (!resp.ok) {
+      var err = await resp.json().catch(function() { return {}; });
+      throw new Error(err.error || 'Server tool execution failed (' + resp.status + ')');
+    }
+    var data = await resp.json();
+    // Sandbox returns {stdout, stderr, exitCode, durationMs}
+    if (data.stdout !== undefined) {
+      var output = data.stdout || '';
+      if (data.stderr) output += (output ? '\n' : '') + '[stderr] ' + data.stderr;
+      if (data.exitCode && data.exitCode !== 0) output += '\n[exit code: ' + data.exitCode + ']';
+      if (data.timedOut) output += '\n[TIMED OUT after ' + data.durationMs + 'ms]';
+      return output || '(no output)';
+    }
+    return data.result || data.output || JSON.stringify(data);
   }
 
   async function handleExtInAutoExec(cmd) {
@@ -2330,6 +2377,12 @@
       if (r.type === 'js_error') return '\n\n---\n**JS Error:** ' + r.error;
       if (r.type === 'ext') return '\n\n---\n**Extension** (`' + r.action + '`):\n```json\n' + r.result + '\n```';
       if (r.type === 'ext_error') return '\n\n---\n**Extension Error** (`' + r.action + '`): ' + r.error;
+      if (r.type === 'bash') return '\n\n---\n**Bash** (`' + (r.command || '') + '`):\n```\n' + r.result + '\n```';
+      if (r.type === 'bash_error') return '\n\n---\n**Bash Error** (`' + (r.command || '') + '`): ' + r.error;
+      if (r.type === 'webfetch') return '\n\n---\n**WebFetch:**\n```\n' + r.result + '\n```';
+      if (r.type === 'webfetch_error') return '\n\n---\n**WebFetch Error:** ' + r.error;
+      if (r.type === 'websearch') return '\n\n---\n**WebSearch:**\n```\n' + r.result + '\n```';
+      if (r.type === 'websearch_error') return '\n\n---\n**WebSearch Error:** ' + r.error;
       return '';
     }).join('');
   }
@@ -2359,18 +2412,87 @@
     });
   }
 
+  // Detect base64 image patterns in result strings
+  var BASE64_IMG_RE = /^data:image\/(jpeg|png|webp|gif);base64,/;
+  var CDP_SCREENSHOT_RE = /"data"\s*:\s*"(\/9j\/|iVBOR|R0lGOD|UklGR)/;
+
+  function extractImagesFromResult(resultStr) {
+    if (!resultStr || resultStr.length < 100) return null;
+    var images = [];
+
+    // data:image/xxx;base64,... (from captureVisibleTab)
+    if (BASE64_IMG_RE.test(resultStr)) {
+      var parts = resultStr.split(',');
+      var mediaMatch = parts[0].match(/data:image\/(\w+);base64/);
+      if (mediaMatch) {
+        images.push({ media_type: 'image/' + mediaMatch[1], data: parts.slice(1).join(',') });
+        return images;
+      }
+    }
+
+    // {"data": "base64..."} (from Page.captureScreenshot) or {"screenshot": ...}
+    try {
+      var obj = JSON.parse(resultStr);
+      var b64 = obj.data || obj.screenshot;
+      if (b64 && typeof b64 === 'string' && b64.length > 1000) {
+        // Detect format from magic bytes
+        var mt = 'image/jpeg';
+        if (b64.startsWith('iVBOR')) mt = 'image/png';
+        else if (b64.startsWith('R0lGOD')) mt = 'image/gif';
+        else if (b64.startsWith('UklGR')) mt = 'image/webp';
+        images.push({ media_type: mt, data: b64 });
+        return images;
+      }
+    } catch (e) {}
+
+    // Raw base64 JPEG/PNG (starts with magic bytes, no wrapper)
+    if (resultStr.length > 1000 && /^(\/9j\/|iVBOR|R0lGOD|UklGR)/.test(resultStr.trim())) {
+      var mt2 = 'image/jpeg';
+      if (resultStr.trim().startsWith('iVBOR')) mt2 = 'image/png';
+      images.push({ media_type: mt2, data: resultStr.trim() });
+      return images;
+    }
+
+    return null;
+  }
+
   function formatCdpResultsAsPrompt(results) {
-    let prompt = 'Here are the execution results from the commands you provided:\n\n';
-    for (const r of results) {
-      if (r.type === 'cdp') prompt += 'CDP ' + r.method + ' returned:\n' + r.result + '\n\n';
-      if (r.type === 'cdp_error') prompt += 'CDP ' + r.method + ' ERROR: ' + r.error + '\n\n';
-      if (r.type === 'js') prompt += 'JS execution returned:\n' + r.result + '\n\n';
-      if (r.type === 'js_error') prompt += 'JS execution ERROR: ' + r.error + '\n\n';
-      if (r.type === 'ext') prompt += 'Extension ' + r.action + ' returned:\n' + r.result + '\n\n';
-      if (r.type === 'ext_error') prompt += 'Extension ' + r.action + ' ERROR: ' + r.error + '\n\n';
+    var prompt = 'Here are the execution results from the commands you provided:\n\n';
+    var images = [];
+    for (var i = 0; i < results.length; i++) {
+      var r = results[i];
+      var resultText = r.result || '';
+      var extracted = null;
+
+      // Try to extract images from results
+      if (r.type === 'cdp' || r.type === 'ext' || r.type === 'js') {
+        extracted = extractImagesFromResult(resultText);
+      }
+
+      if (extracted && extracted.length > 0) {
+        // Replace huge base64 with placeholder, send image separately
+        var label = r.type === 'cdp' ? 'CDP ' + r.method : r.type === 'ext' ? 'Extension ' + r.action : 'JS';
+        prompt += label + ' returned: [screenshot captured — see attached image]\n\n';
+        for (var j = 0; j < extracted.length; j++) {
+          images.push(extracted[j]);
+        }
+      } else {
+        if (r.type === 'cdp') prompt += 'CDP ' + r.method + ' returned:\n' + resultText + '\n\n';
+        if (r.type === 'cdp_error') prompt += 'CDP ' + r.method + ' ERROR: ' + r.error + '\n\n';
+        if (r.type === 'js') prompt += 'JS execution returned:\n' + resultText + '\n\n';
+        if (r.type === 'js_error') prompt += 'JS execution ERROR: ' + r.error + '\n\n';
+        if (r.type === 'ext') prompt += 'Extension ' + r.action + ' returned:\n' + resultText + '\n\n';
+        if (r.type === 'ext_error') prompt += 'Extension ' + r.action + ' ERROR: ' + r.error + '\n\n';
+        if (r.type === 'bash') prompt += 'Bash (' + (r.command || '') + ') returned:\n' + resultText + '\n\n';
+        if (r.type === 'bash_error') prompt += 'Bash (' + (r.command || '') + ') ERROR: ' + r.error + '\n\n';
+        if (r.type === 'webfetch') prompt += 'WebFetch returned:\n' + resultText + '\n\n';
+        if (r.type === 'webfetch_error') prompt += 'WebFetch ERROR: ' + r.error + '\n\n';
+        if (r.type === 'websearch') prompt += 'WebSearch returned:\n' + resultText + '\n\n';
+        if (r.type === 'websearch_error') prompt += 'WebSearch ERROR: ' + r.error + '\n\n';
+      }
     }
     prompt += 'Based on these results, continue with the task. If the task is complete, summarize what was done. If more steps are needed, provide the next commands to execute.';
-    return prompt;
+    return { text: prompt, images: images };
   }
 
   function onStreamError(error, targetSid) {
