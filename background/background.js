@@ -294,6 +294,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ status: 'ok' });
       return true;
 
+    case 'FETCH_FILE': {
+      // Background script can fetch any URL without CORS
+      var fileUrl = message.url;
+      if (!fileUrl) { sendResponse({ error: 'url required' }); return true; }
+      fetch(fileUrl).then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        var ct = r.headers.get('content-type') || '';
+        if (ct.startsWith('image/') || ct.startsWith('application/octet')) {
+          return r.blob().then(function(blob) {
+            return new Promise(function(resolve) {
+              var reader = new FileReader();
+              reader.onloadend = function() { resolve({ base64: reader.result.split(',')[1], mediaType: ct, size: blob.size }); };
+              reader.readAsDataURL(blob);
+            });
+          });
+        } else {
+          return r.text().then(function(text) { return { text: text.substring(0, 50000), mediaType: ct, size: text.length }; });
+        }
+      }).then(function(data) {
+        sendResponse(data);
+      }).catch(function(e) {
+        sendResponse({ error: e.message });
+      });
+      return true;
+    }
+
     case 'RESET_ALL':
       chrome.storage.sync.clear(() => {
         chrome.storage.local.clear(() => {
@@ -593,9 +619,46 @@ async function handleChromeApiBridge(message, sendResponse) {
     return;
   }
 
+  // Virtual APIs (not on chrome.* object)
+  if (apiPath === 'webai.fetchFile') {
+    var url = args[0];
+    if (!url) { sendResponse({ error: 'URL required' }); return; }
+    fetch(url).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var ct = r.headers.get('content-type') || '';
+      if (ct.startsWith('image/') || ct.startsWith('application/octet')) {
+        return r.blob().then(function(blob) {
+          return new Promise(function(resolve) {
+            var reader = new FileReader();
+            reader.onloadend = function() { resolve({ result: { base64: reader.result.split(',')[1], mediaType: ct, size: blob.size } }); };
+            reader.readAsDataURL(blob);
+          });
+        });
+      } else {
+        return r.text().then(function(text) { return { result: { text: text.substring(0, 50000), mediaType: ct, size: text.length } }; });
+      }
+    }).then(function(data) { sendResponse(data); }).catch(function(e) { sendResponse({ error: e.message }); });
+    return;
+  }
+
+  if (apiPath === 'webai.listFiles') {
+    var sessionId = args[0];
+    if (!sessionId) { sendResponse({ error: 'sessionId required' }); return; }
+    chrome.storage.local.get(['devConfig'], function(r) {
+      var server = (r.devConfig && r.devConfig.server) || 'https://webai.pc.am';
+      chrome.storage.local.get(['authAccessToken'], function(auth) {
+        var headers = auth.authAccessToken ? { 'Authorization': 'Bearer ' + auth.authAccessToken } : {};
+        fetch(server + '/api/files/' + sessionId, { headers: headers }).then(function(r) { return r.json(); }).then(function(data) {
+          sendResponse({ result: data });
+        }).catch(function(e) { sendResponse({ error: e.message }); });
+      });
+    });
+    return;
+  }
+
   // Must start with chrome.
   if (!apiPath.startsWith('chrome.')) {
-    sendResponse({ error: 'API path must start with "chrome.": "' + apiPath + '"' });
+    sendResponse({ error: 'API path must start with "chrome." or "webai.": "' + apiPath + '"' });
     return;
   }
 

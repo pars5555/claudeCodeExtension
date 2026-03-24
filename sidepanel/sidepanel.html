@@ -85,24 +85,19 @@
       <select id="wai-prompt-select" title="Select prompt mode" style="display:none;">
         <option value="general">General</option>
       </select>
-    </div>
-    <div class="wai-panel-header-actions">
-      <select id="wai-session-select" title="Switch chat session">
-        <option value="" disabled selected>Sessions</option>
-      </select>
-      <span class="wai-user-balance" id="wai-user-balance" style="display:none;font-size:11px;color:#ffffff;font-weight:600;padding:2px 6px;background:rgba(255,255,255,0.12);border-radius:4px;" title="Your balance"></span>
-      <div class="wai-user-badge" id="wai-user-badge" style="display:none;position:relative;" title="Account options">
+      <button id="wai-scripts-btn" title="Generate exploitation scripts from audit findings" style="display:none;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid rgba(139,92,246,0.4);background:rgba(139,92,246,0.15);color:#a78bfa;cursor:pointer;">Scripts</button>
+      <div class="wai-user-badge" id="wai-user-badge" style="display:none;position:relative;margin-left:auto;" title="Account options">
+        <span class="wai-user-avatar" id="wai-user-avatar"></span>
         <span class="wai-user-badge-text" id="wai-user-badge-text"></span>
-        <svg viewBox="0 0 24 24" width="12" height="12"><path d="M7 10l5 5 5-5z" fill="currentColor"/></svg>
+        <svg viewBox="0 0 24 24" width="10" height="10"><path d="M7 10l5 5 5-5z" fill="currentColor"/></svg>
         <!-- User dropdown menu -->
         <div id="wai-user-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--bg-secondary,#1e1e2e);border:1px solid rgba(255,255,255,0.15);border-radius:8px;min-width:180px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.4);overflow:hidden;">
           <div id="wai-user-menu-email" style="padding:10px 14px;font-size:11px;color:rgba(255,255,255,0.4);border-bottom:1px solid rgba(255,255,255,0.08);"></div>
+          <div id="wai-user-menu-topup" class="wai-menu-item" style="padding:10px 14px;font-size:13px;color:#a78bfa;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.08);">Top Up Balance</div>
+          <div id="wai-user-menu-export" class="wai-menu-item" style="padding:10px 14px;font-size:13px;color:#94a3b8;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.08);">Export Chat (CSV)</div>
           <div id="wai-user-menu-logout" class="wai-menu-item" style="padding:10px 14px;font-size:13px;color:#f87171;cursor:pointer;">Sign out</div>
         </div>
       </div>
-      <button class="wai-header-btn" id="wai-clear-btn" title="End chat">
-        <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-      </button>
     </div>
   </div>
 
@@ -110,6 +105,12 @@
   <div class="wai-sessions-wrapper" id="wai-sessions-wrapper">
     <!-- Session containers are created dynamically by JS -->
     <!-- Welcome container is the default view -->
+  </div>
+
+  <!-- Session files drawer -->
+  <div id="wai-files-drawer" style="display:none;background:rgba(124,58,237,0.05);border-bottom:1px solid rgba(124,58,237,0.1);padding:8px 14px;max-height:120px;overflow-y:auto;">
+    <div id="wai-files-grid" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+    <div id="wai-files-empty" style="font-size:11px;color:#64748b;">No files in this session</div>
   </div>
 
   <!-- Context meter -->
@@ -144,6 +145,13 @@
         <svg viewBox="0 0 24 24" width="12" height="12"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="currentColor"/></svg>
         <span id="wai-tab-context-label">No page</span>
       </div>
+      <!-- Session select and clear button: moved to tab-indicator by JS -->
+      <select id="wai-session-select" title="Switch chat session">
+        <option value="" disabled selected>Sessions</option>
+      </select>
+      <button id="wai-clear-btn" title="End chat" style="display:none;border:none;background:transparent;color:#64748b;cursor:pointer;padding:2px;align-items:center;">
+        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
+      </button>
     </div>
     <input type="file" id="wai-file-input" accept="image/*,.pdf,.txt,.json,.csv,.xml,.html,.css,.js,.ts,.md" multiple style="display:none;">
   </div>
