@@ -2617,7 +2617,7 @@
         var captchaIcons = {
           'recaptcha_v2': 'https://upload.wikimedia.org/wikipedia/commons/a/ad/RecaptchaLogo.svg',
           'recaptcha': 'https://upload.wikimedia.org/wikipedia/commons/a/ad/RecaptchaLogo.svg',
-          'hcaptcha': 'https://assets.hcaptcha.com/captcha/v1/default-icon.svg',
+          'hcaptcha': 'https://www.hcaptcha.com/favicon.ico',
           'turnstile': 'https://www.cloudflare.com/favicon.ico',
           'slide': 'https://static.geetest.com/static/icons/geetest.ico',
           'funcaptcha': 'https://www.arkoselabs.com/favicon.ico',
