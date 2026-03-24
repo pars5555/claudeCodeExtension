@@ -2618,6 +2618,8 @@
           'hcaptcha': 'captcha-hcaptcha',
           'turnstile': 'captcha-turnstile',
           'slide': 'captcha-slide',
+          'geetest': 'captcha-slide',
+          'geetest_slide': 'captcha-slide',
           'funcaptcha': 'captcha-funcaptcha',
           'datadome': 'captcha-datadome',
         };
@@ -2628,7 +2630,9 @@
           'recaptcha': 'https://upload.wikimedia.org/wikipedia/commons/a/ad/RecaptchaLogo.svg',
           'hcaptcha': chrome.runtime.getURL('icons/captcha-hcaptcha.svg'),
           'turnstile': 'https://www.cloudflare.com/favicon.ico',
-          'slide': 'https://static.geetest.com/static/icons/geetest.ico',
+          'slide': chrome.runtime.getURL('icons/captcha-geetest.png'),
+          'geetest': chrome.runtime.getURL('icons/captcha-geetest.png'),
+          'geetest_slide': chrome.runtime.getURL('icons/captcha-geetest.png'),
           'funcaptcha': 'https://www.arkoselabs.com/favicon.ico',
           'datadome': 'https://datadome.co/favicon.ico',
         };
