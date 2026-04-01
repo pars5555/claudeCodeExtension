@@ -5,3 +5,7 @@ server/system-prompt.md
 *.log
 .DS_Store
 Thumbs.db
+
+# Build artifacts
+*.zip
+webai-ext-v*/
