@@ -113,8 +113,9 @@
       }
     }
 
-    // Update indicator AFTER session switch so it shows correct session
+    // Update indicator and selector AFTER session switch
     updateTabIndicator();
+    updateSessionSelector();
   }
 
   function updateTabIndicator() {
@@ -329,17 +330,19 @@
 
   function addSessionToSelector(sessionId, title) {
     if (!sessionSelect) return;
+    if (!title) return; // Don't add empty-titled sessions
     // Check if option already exists
     for (const opt of sessionSelect.options) {
       if (opt.value === sessionId) {
-        opt.textContent = title || sessionId.slice(0, 8);
+        opt.textContent = title;
         return;
       }
     }
     const option = document.createElement('option');
     option.value = sessionId;
-    option.textContent = title || sessionId.slice(0, 8);
+    option.textContent = title;
     sessionSelect.appendChild(option);
+    sessionSelect.style.display = '';
   }
 
   function removeSessionFromSelector(sessionId) {
@@ -347,9 +350,10 @@
     for (const opt of sessionSelect.options) {
       if (opt.value === sessionId) {
         opt.remove();
-        return;
+        break;
       }
     }
+    if (sessionSelect.options.length === 0) sessionSelect.style.display = 'none';
   }
 
   async function updateSessionSelector() {
@@ -368,11 +372,11 @@
         sessions.delete(sid);
         continue;
       }
-      // Skip pending or empty sessions
+      // Skip pending sessions
       if (sid.startsWith('pending-')) continue;
-      if (!s.history || s.history.length === 0) continue;
+      if (!s.title) continue;
       const isActiveTab = s.tabId === currentTabId;
-      const title = (s.title || sid.slice(0, 8)) + (isActiveTab ? ' ★' : '');
+      const title = s.title + (isActiveTab ? ' ★' : '');
       const option = document.createElement('option');
       option.value = sid;
       option.textContent = title;
@@ -395,7 +399,7 @@
 
       // Get all open tab IDs
       var openTabs = [];
-      try { openTabs = await chrome.tabs.query({ currentWindow: true }); } catch (e) {}
+      try { openTabs = await chrome.tabs.query({}); } catch (e) {}
       var tabIdSet = new Set(openTabs.map(function(t) { return t.id; }));
 
       // Load only the latest session per open tab
@@ -1271,17 +1275,16 @@
   // ---------------------------------------------------------------------------
   // Event listeners
   // ---------------------------------------------------------------------------
-  clearBtn.addEventListener('click', () => {
-    // Only clear the current tab's session, or switch to welcome if no session
+  clearBtn.addEventListener('click', async () => {
     const currentTabSession = findSessionByTabId(currentTabId);
     if (currentTabSession) {
-      // Temporarily switch to current tab's session before clearing
+      const confirmed = await showConfirm('End current chat session?');
+      if (!confirmed) return;
       if (activeSessionId !== currentTabSession) {
         switchToSession(currentTabSession);
       }
       clearChat();
     } else {
-      // No session on this tab — just switch to welcome
       switchToSession(null);
     }
   });
@@ -1662,7 +1665,7 @@
     updateScriptsButton();
     updateExportButton();
     updateFilesButton();
-    if (sessionSelect) sessionSelect.style.display = '';
+    if (sessionSelect) sessionSelect.style.display = sessionSelect.options.length > 0 ? '' : 'none';
     if (clearBtn) clearBtn.style.display = 'flex';
   }
 
@@ -2429,7 +2432,7 @@
 
     if (fullText && !cancelled && execTabId) {
       const execStart = Date.now();
-      executeCdpFromResponse(fullText, execTabId).then(cdpResults => {
+      executeCdpFromResponse(fullText, execTabId, targetSid).then(cdpResults => {
         const execMs = Date.now() - execStart;
         if (autoExecCancelled) {
           addSystemMessageToContainer(container, 'Stopped by user.');
@@ -2500,7 +2503,7 @@
 
   // ── CDP/JS auto-execution from AI response ─────────────────────────────────
 
-  async function executeCdpFromResponse(responseText, tabId) {
+  async function executeCdpFromResponse(responseText, tabId, targetSid) {
     if (!responseText || !tabId) return null;
     if (autoExecCancelled) return null;
 
@@ -2675,14 +2678,14 @@
         };
         var iconUrl = captchaIcons[captchaType] || '';
         var iconHtml = iconUrl ? '<img src="' + iconUrl + '" style="width:100px;height:100px;display:block;margin:8px auto;border-radius:8px;">' : '';
-        addCaptchaSystemMessage(iconHtml + '<div>' + captchaType + ' detected — loading solver...</div>');
+        addCaptchaSystemMessage(iconHtml + '<div>' + captchaType + ' detected — loading solver...</div>', targetSid);
         try {
           var captchaResp = await fetch(SERVER_URL + '/api/internal-prompt/' + promptType, { headers: getAuthHeaders() });
           if (captchaResp.ok) {
             var captchaData = await captchaResp.json();
             if (captchaData.content) {
               results.push({ type: 'captcha_instructions', result: captchaData.content });
-              addCaptchaSystemMessage('<div>' + captchaType + ' solver activated</div>');
+              addCaptchaSystemMessage('<div>' + captchaType + ' solver activated</div>', targetSid);
             }
           }
         } catch (e) { /* silent */ }
@@ -2943,12 +2946,15 @@
     addSystemMessageToContainer(messagesEl, text);
   }
 
-  function addCaptchaSystemMessage(html) {
+  function addCaptchaSystemMessage(html, targetSid) {
+    // Only show captcha messages for the active session
+    if (targetSid && targetSid !== activeSessionId) return;
+    var container = targetSid ? getSessionContainer(targetSid) : messagesEl;
     var el = document.createElement('div');
     el.className = 'wai-system-msg wai-captcha-msg';
     el.innerHTML = html;
-    messagesEl.appendChild(el);
-    scrollToBottom();
+    container.appendChild(el);
+    if (targetSid === activeSessionId) scrollToBottom();
   }
 
   function addSystemMessageToContainer(container, text) {
