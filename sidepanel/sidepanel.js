@@ -288,6 +288,8 @@
         sendBtn.disabled = true;
         sendBtn.style.opacity = '0.3';
         sendBtn.style.pointerEvents = 'none';
+        if (modelSelect) modelSelect.disabled = true;
+        if (promptSelect) promptSelect.disabled = true;
         if (!disabledBanner) {
           var banner = document.createElement('div');
           banner.className = 'session-disabled-banner';
@@ -304,6 +306,8 @@
         sendBtn.disabled = false;
         sendBtn.style.opacity = '';
         sendBtn.style.pointerEvents = '';
+        if (modelSelect) modelSelect.disabled = false;
+        if (promptSelect) promptSelect.disabled = false;
         if (disabledBanner) disabledBanner.remove();
       }
     }
@@ -350,24 +354,32 @@
 
   async function updateSessionSelector() {
     if (!sessionSelect) return;
-    // Clear all except the "New Chat" option
-    while (sessionSelect.options.length > 1) {
-      sessionSelect.options[1].remove();
-    }
+    sessionSelect.innerHTML = '';
     // Get open tab IDs
     var openTabIds = new Set();
     try {
       var tabs = await chrome.tabs.query({ currentWindow: true });
       tabs.forEach(function(t) { openTabIds.add(t.id); });
     } catch (e) { openTabIds = null; }
-    // Only show sessions whose tab still exists
+    // Only show sessions whose tab still exists and have content
+    var optionCount = 0;
     for (const [sid, s] of sessions) {
       if (s.tabId && openTabIds && !openTabIds.has(s.tabId)) {
         sessions.delete(sid);
         continue;
       }
-      addSessionToSelector(sid, s.title);
+      // Skip pending or empty sessions
+      if (sid.startsWith('pending-')) continue;
+      if (!s.history || s.history.length === 0) continue;
+      const isActiveTab = s.tabId === currentTabId;
+      const title = (s.title || sid.slice(0, 8)) + (isActiveTab ? ' ★' : '');
+      const option = document.createElement('option');
+      option.value = sid;
+      option.textContent = title;
+      sessionSelect.appendChild(option);
+      optionCount++;
     }
+    sessionSelect.style.display = optionCount > 0 ? '' : 'none';
     sessionSelect.value = activeSessionId || '';
   }
 
@@ -392,6 +404,8 @@
         if (sessions.has(s.id)) continue;
         if (!s.tab_id || !tabIdSet.has(s.tab_id)) continue;
         if (loadedTabIds.has(s.tab_id)) continue; // skip older sessions for same tab
+        // Skip sessions with no content
+        if (!s.first_message && s.message_count === 0) continue;
         loadedTabIds.add(s.tab_id);
 
         // Create container and load messages
@@ -706,11 +720,7 @@
   // Session selector — switch between chat sessions
   sessionSelect.addEventListener('change', async () => {
     const selectedId = sessionSelect.value;
-    if (selectedId === '') {
-      // "New Chat" selected
-      switchToSession(null);
-      return;
-    }
+    if (!selectedId) return;
 
     const session = sessions.get(selectedId);
     if (session && session.tabId && session.tabId !== currentTabId) {
@@ -1261,7 +1271,20 @@
   // ---------------------------------------------------------------------------
   // Event listeners
   // ---------------------------------------------------------------------------
-  clearBtn.addEventListener('click', clearChat);
+  clearBtn.addEventListener('click', () => {
+    // Only clear the current tab's session, or switch to welcome if no session
+    const currentTabSession = findSessionByTabId(currentTabId);
+    if (currentTabSession) {
+      // Temporarily switch to current tab's session before clearing
+      if (activeSessionId !== currentTabSession) {
+        switchToSession(currentTabSession);
+      }
+      clearChat();
+    } else {
+      // No session on this tab — just switch to welcome
+      switchToSession(null);
+    }
+  });
   sendBtn.addEventListener('click', () => {
     if (isStreaming && !inputEl.value.trim()) {
       stopCurrentStream();
@@ -1640,7 +1663,7 @@
     updateExportButton();
     updateFilesButton();
     if (sessionSelect) sessionSelect.style.display = '';
-    if (clearBtn) clearBtn.style.display = activeSessionId ? 'flex' : 'none';
+    if (clearBtn) clearBtn.style.display = 'flex';
   }
 
   function stopCurrentStream() {
