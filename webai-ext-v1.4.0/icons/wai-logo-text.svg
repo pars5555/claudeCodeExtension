@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6"/>
+      <stop offset="45%" style="stop-color:#6D28D9"/>
+      <stop offset="100%" style="stop-color:#4338CA"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:rgba(255,255,255,0.22)"/>
+      <stop offset="40%" style="stop-color:rgba(255,255,255,0)"/>
+      <stop offset="100%" style="stop-color:rgba(255,255,255,0.06)"/>
+    </linearGradient>
+    <linearGradient id="wGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFFFFF"/>
+      <stop offset="100%" style="stop-color:#DDD6FE"/>
+    </linearGradient>
+    <linearGradient id="aiGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#C4B5FD"/>
+      <stop offset="100%" style="stop-color:#A78BFA"/>
+    </linearGradient>
+    <filter id="textShadow">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="rgba(0,0,0,0.3)"/>
+    </filter>
+    <radialGradient id="orb" cx="30%" cy="25%" r="65%">
+      <stop offset="0%" style="stop-color:rgba(196,181,253,0.25)"/>
+      <stop offset="100%" style="stop-color:rgba(196,181,253,0)"/>
+    </radialGradient>
+    <radialGradient id="orb2" cx="75%" cy="80%" r="50%">
+      <stop offset="0%" style="stop-color:rgba(99,102,241,0.2)"/>
+      <stop offset="100%" style="stop-color:rgba(99,102,241,0)"/>
+    </radialGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <rect width="128" height="128" rx="28" fill="url(#shine)"/>
+  <circle cx="38" cy="32" r="50" fill="url(#orb)"/>
+  <circle cx="95" cy="100" r="40" fill="url(#orb2)"/>
+  <rect width="126" height="126" x="1" y="1" rx="27" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+
+  <!-- wAI drawn as rounded paths -->
+  <g filter="url(#textShadow)">
+    <!-- w (white gradient, lowercase — shorter, sits on baseline) -->
+    <path d="M 8,58 Q 13,90 19,86 Q 25,58 28,58 Q 31,58 35,86 Q 41,90 46,58"
+      fill="none" stroke="url(#wGrad)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- A (purple gradient) -->
+    <path d="M 56,90 Q 63,33 77,33 Q 91,33 98,90"
+      fill="none" stroke="url(#aiGrad)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- A crossbar -->
+    <line x1="70.5" y1="65" x2="83.5" y2="65"
+      stroke="#B8A5F8" stroke-width="6" stroke-linecap="round"/>
+
+    <!-- i (purple) — dot + short stem, lowercase height matching w -->
+    <circle cx="107" cy="48" r="4" fill="#B8A5F8"/>
+    <line x1="107" y1="58" x2="107" y2="90"
+      stroke="#B8A5F8" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>

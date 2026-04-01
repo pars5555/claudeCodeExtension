@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Web Assistant</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <!-- First-run Disclaimer -->
+  <div id="disclaimer-overlay" class="disclaimer-overlay" style="display:none;">
+    <div class="disclaimer-card">
+      <img src="../icons/wai-logo-text.svg" width="64" height="64" alt="wAi" style="border-radius:14px;margin-bottom:16px;">
+      <h2>This is a beta feature</h2>
+      <div class="disclaimer-items">
+        <div class="disclaimer-item">
+          <span class="disclaimer-icon">⚠️</span>
+          <p>This beta feature has unique risks. You are fully responsible for all risks associated with use of this product.</p>
+        </div>
+        <div class="disclaimer-item">
+          <span class="disclaimer-icon">👁️</span>
+          <p>The AI can read page content, execute browser actions, and access cookies when responding. Avoid using on sensitive sites like banking and health platforms.</p>
+        </div>
+        <div class="disclaimer-item">
+          <span class="disclaimer-icon">🔺</span>
+          <p>Malicious actors can hide instructions in websites that trick AI into taking harmful actions without your knowledge.</p>
+        </div>
+      </div>
+      <button id="disclaimer-accept-btn" class="disclaimer-btn">I understand</button>
+    </div>
+  </div>
+
+  <!-- Auth Overlay -->
+  <div class="wai-auth-overlay" id="wai-auth-overlay" style="display:none;">
+    <div class="wai-auth-card">
+      <div class="wai-auth-logo">
+        <img src="../icons/wai-logo-text.svg" width="64" height="64" alt="wAi">
+      </div>
+      <h2 class="wai-auth-title">AI Web Assistant</h2>
+      <p class="wai-auth-subtitle" id="wai-auth-subtitle">Sign in to start chatting</p>
+
+      <!-- Auth Error -->
+      <div class="wai-auth-error" id="wai-auth-error" style="display:none;"></div>
+      <div class="wai-auth-success" id="wai-auth-success" style="display:none;"></div>
+
+      <!-- OAuth Buttons -->
+      <div class="wai-auth-oauth">
+        <button class="wai-auth-btn wai-auth-btn-google" id="wai-oauth-google">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+          Continue with Google
+        </button>
+        <button class="wai-auth-btn wai-auth-btn-apple" id="wai-oauth-apple">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="white"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+          Continue with Apple
+        </button>
+        <button class="wai-auth-btn wai-auth-btn-github" id="wai-oauth-github">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="white"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          Continue with GitHub
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <div class="wai-panel-header" id="wai-panel-header">
+    <div class="wai-panel-header-left">
+      <div class="wai-panel-logo">
+        <img src="../icons/wai-logo-text.svg" width="28" height="28" alt="wAi">
+      </div>
+      <select id="wai-model-select" title="Select model">
+        <optgroup label="Claude">
+          <option value="claude-opus-4-6">Opus 4.6</option>
+          <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+          <option value="claude-haiku-4-5">Haiku 4.5</option>
+        </optgroup>
+        <optgroup label="Gemini">
+          <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
+          <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
+          <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash-Lite</option>
+          <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+          <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+          <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
+        </optgroup>
+      </select>
+      <select id="wai-prompt-select" title="Select prompt mode" style="display:none;">
+        <option value="general">General</option>
+      </select>
+    </div>
+    <div class="wai-panel-header-actions">
+      <select id="wai-session-select" title="Switch chat session">
+        <option value="" disabled selected>Sessions</option>
+      </select>
+      <span class="wai-user-balance" id="wai-user-balance" style="display:none;font-size:11px;color:#ffffff;font-weight:600;padding:2px 6px;background:rgba(255,255,255,0.12);border-radius:4px;" title="Your balance"></span>
+      <div class="wai-user-badge" id="wai-user-badge" style="display:none;position:relative;" title="Account options">
+        <span class="wai-user-badge-text" id="wai-user-badge-text"></span>
+        <svg viewBox="0 0 24 24" width="12" height="12"><path d="M7 10l5 5 5-5z" fill="currentColor"/></svg>
+        <!-- User dropdown menu -->
+        <div id="wai-user-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--bg-secondary,#1e1e2e);border:1px solid rgba(255,255,255,0.15);border-radius:8px;min-width:180px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.4);overflow:hidden;">
+          <div id="wai-user-menu-email" style="padding:10px 14px;font-size:11px;color:rgba(255,255,255,0.4);border-bottom:1px solid rgba(255,255,255,0.08);"></div>
+          <div id="wai-user-menu-logout" class="wai-menu-item" style="padding:10px 14px;font-size:13px;color:#f87171;cursor:pointer;">Sign out</div>
+        </div>
+      </div>
+      <button class="wai-header-btn" id="wai-clear-btn" title="End chat">
+        <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Sessions wrapper — each chat session is a child container -->
+  <div class="wai-sessions-wrapper" id="wai-sessions-wrapper">
+    <!-- Session containers are created dynamically by JS -->
+    <!-- Welcome container is the default view -->
+  </div>
+
+  <!-- Context meter -->
+  <div class="wai-context-bar" id="wai-context-bar">
+    <div class="wai-context-meter">
+      <div class="wai-context-fill" id="wai-context-fill"></div>
+    </div>
+    <span class="wai-context-label" id="wai-context-label">100% remaining</span>
+    <button class="wai-context-compact-btn" id="wai-compact-btn" title="Compact context">
+      <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10H7v-2h10v2z" fill="currentColor"/></svg>
+    </button>
+  </div>
+
+  <!-- Input -->
+  <div class="wai-input-area">
+    <div class="wai-input-main">
+      <div class="wai-input-wrapper">
+        <textarea id="wai-chat-input" placeholder="Ask about this page..." rows="1"></textarea>
+      </div>
+      <button id="wai-send-btn" title="Send">
+        <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+    <!-- Attachments preview -->
+    <div class="wai-attachments" id="wai-attachments" style="display:none;"></div>
+    <!-- Bottom bar: tab context + upload -->
+    <div class="wai-input-bottom">
+      <button class="wai-input-action-btn" id="wai-upload-btn" title="Upload image or file">
+        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" fill="currentColor"/></svg>
+      </button>
+      <div class="wai-tab-context" id="wai-tab-context">
+        <svg viewBox="0 0 24 24" width="12" height="12"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="currentColor"/></svg>
+        <span id="wai-tab-context-label">No page</span>
+      </div>
+    </div>
+    <input type="file" id="wai-file-input" accept="image/*,.pdf,.txt,.json,.csv,.xml,.html,.css,.js,.ts,.md" multiple style="display:none;">
+  </div>
+
+  <!-- Custom confirm dialog -->
+  <div id="confirm-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:none;align-items:center;justify-content:center;">
+    <div style="background:var(--bg-secondary,#1e1e2e);border:1px solid var(--border-color,#333);border-radius:12px;padding:20px;max-width:320px;width:90%;text-align:center;">
+      <p id="confirm-message" style="margin:0 0 12px;color:#e0e0e0;font-size:14px;"></p>
+      <div id="confirm-input-wrap" style="display:none;margin-bottom:12px;">
+        <input id="confirm-input" type="text" style="width:100%;padding:8px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-size:14px;outline:none;">
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button id="confirm-cancel" style="padding:8px 20px;border-radius:8px;border:1px solid #555;background:transparent;color:#ccc;cursor:pointer;font-size:13px;">Cancel</button>
+        <button id="confirm-ok" style="padding:8px 20px;border-radius:8px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-size:13px;">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
