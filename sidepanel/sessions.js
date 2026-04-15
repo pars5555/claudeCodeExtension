@@ -176,8 +176,19 @@ function switchToSession(sessionId) {
         banner.className = 'session-disabled-banner';
         banner.style.cssText = 'padding:8px 12px;background:rgba(251,191,36,0.1);border-bottom:1px solid rgba(251,191,36,0.2);font-size:12px;color:#fbbf24;text-align:center;cursor:pointer;position:sticky;top:0;z-index:10;';
         banner.textContent = 'This chat is on another tab. Click to switch.';
-        banner.addEventListener('click', function () {
-          chrome.tabs.update(session.tabId, { active: true });
+        banner.addEventListener('click', async function () {
+          try {
+            await chrome.tabs.update(session.tabId, { active: true });
+          } catch (e) {
+            // Tab was closed — open a new one and re-bind the session to it.
+            try {
+              var newTab = await chrome.tabs.create({ active: true });
+              session.tabId = newTab.id;
+              currentTabId = newTab.id;
+              // Refresh UI so banner goes away and input becomes enabled.
+              switchToSession(session.el && session.el.dataset ? session.el.dataset.sessionId : activeSessionId);
+            } catch (_) { /* give up silently */ }
+          }
         });
         session.el.insertBefore(banner, session.el.firstChild);
       }

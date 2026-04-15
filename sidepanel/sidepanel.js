@@ -553,7 +553,16 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo) {
     updateCurrentTab();
   }
 });
-chrome.tabs.onRemoved.addListener(function () { updateSessionSelector(); });
+chrome.tabs.onRemoved.addListener(function (closedTabId) {
+  // Clear the dead tabId on any session that pointed at it so subsequent
+  // chrome.tabs.update / debugger.sendCommand calls don't throw
+  // "No tab with id" unhandled rejections.
+  sessions.forEach(function (s) {
+    if (s.tabId === closedTabId) s.tabId = null;
+    if (s.taskTabId === closedTabId) s.taskTabId = null;
+  });
+  updateSessionSelector();
+});
 chrome.tabs.onCreated.addListener(function () { updateSessionSelector(); });
 
 updateCurrentTab();
