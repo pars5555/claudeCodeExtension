@@ -95,31 +95,43 @@ function closeUserEventStream() {
   if (_userEventReconnectTimer) { clearTimeout(_userEventReconnectTimer); _userEventReconnectTimer = null; }
 }
 
-function handleUserEvent(ev) {
+async function handleUserEvent(ev) {
   if (!ev || !ev.type) return;
   if (ev.type === 'remote_test') {
-    // Admin pushed a test. The active session (if any) is bound to whatever
-    // model it was spawned with — switching the model dropdown alone does
-    // NOT change the running CLI process. So we end the current session
-    // first, then switch the model, then send. This way every test starts
-    // a fresh session with the requested model.
+    // 1. End any active session first — the running CLI process is bound to
+    //    whatever model it was spawned with; switching the dropdown does NOT
+    //    change the live process.
     if (typeof activeSessionId !== 'undefined' && activeSessionId) {
       try { clearChat(); } catch (_) {}
+      // clearChat fires fetches but doesn't await them — give the server a
+      // moment to actually receive /api/chat/kill so the next send creates
+      // a fresh session instead of resuming the killed one.
+      await new Promise(function (r) { setTimeout(r, 500); });
     }
-    setTimeout(function () {
-      if (ev.model && modelSelect) {
-        var hasOpt = !!modelSelect.querySelector('option[value="' + ev.model + '"]');
-        if (hasOpt) {
-          modelSelect.value = ev.model;
-          chrome.storage.sync.set({ model: ev.model });
-        }
+    // 2. Switch the model — programmatic .value = does NOT fire the change
+    //    event the dropdown's listener uses to PUT users.default_model, so
+    //    we hit the API directly. chat.js reads users.default_model on
+    //    every request, so this is what the next send will actually use.
+    if (ev.model && modelSelect) {
+      var hasOpt = !!modelSelect.querySelector('option[value="' + ev.model + '"]');
+      if (hasOpt) {
+        modelSelect.value = ev.model;
+        chrome.storage.sync.set({ model: ev.model });
+        try {
+          await fetch(SERVER_URL + '/api/user/settings/model', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ value: ev.model }),
+          });
+        } catch (_) { /* ignore — next send will still use whichever DB value is current */ }
       }
-      var msg = String(ev.message || '').trim();
-      if (msg) {
-        inputEl.value = msg;
-        setTimeout(function () { sendBtn.click(); }, 100);
-      }
-    }, 250);
+    }
+    // 3. Fill the input and click send.
+    var msg = String(ev.message || '').trim();
+    if (msg) {
+      inputEl.value = msg;
+      setTimeout(function () { sendBtn.click(); }, 100);
+    }
   }
 }
 
