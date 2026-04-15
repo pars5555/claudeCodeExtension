@@ -337,6 +337,22 @@ var PROVIDER_LABELS = {
   xai: 'xAI Grok (via proxy)',
 };
 
+function formatPrice(p) {
+  if (p == null || p === 0) return '';
+  // Sub-dollar: 2 decimals; whole dollar+: 2 decimals dropping trailing zeros
+  var n = Number(p);
+  if (n < 1) return '$' + n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return '$' + (Math.round(n * 100) / 100);
+}
+
+function formatModelLabel(m) {
+  var name = m.name || m.id;
+  var ip = formatPrice(m.input_price);
+  var op = formatPrice(m.output_price);
+  if (ip || op) return name + '  (' + (ip || '?') + ' / ' + (op || '?') + ' per M)';
+  return name;
+}
+
 async function loadModelsFromServer() {
   try {
     var resp = await fetch(SERVER_URL + '/api/models', { headers: getAuthHeaders() });
@@ -375,7 +391,7 @@ async function loadModelsFromServer() {
       for (var j = 0; j < list.length; j++) {
         var opt = document.createElement('option');
         opt.value = list[j].id;
-        opt.textContent = list[j].name || list[j].id;
+        opt.textContent = formatModelLabel(list[j]);
         og.appendChild(opt);
       }
       modelSelect.appendChild(og);
