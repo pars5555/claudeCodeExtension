@@ -98,21 +98,28 @@ function closeUserEventStream() {
 function handleUserEvent(ev) {
   if (!ev || !ev.type) return;
   if (ev.type === 'remote_test') {
-    // Admin pushed a test — switch model dropdown and send the message
-    // through the regular UI path so user can watch it happen.
-    if (ev.model && modelSelect) {
-      var hasOpt = !!modelSelect.querySelector('option[value="' + ev.model + '"]');
-      if (hasOpt) {
-        modelSelect.value = ev.model;
-        chrome.storage.sync.set({ model: ev.model });
+    // Admin pushed a test. The active session (if any) is bound to whatever
+    // model it was spawned with — switching the model dropdown alone does
+    // NOT change the running CLI process. So we end the current session
+    // first, then switch the model, then send. This way every test starts
+    // a fresh session with the requested model.
+    if (typeof activeSessionId !== 'undefined' && activeSessionId) {
+      try { clearChat(); } catch (_) {}
+    }
+    setTimeout(function () {
+      if (ev.model && modelSelect) {
+        var hasOpt = !!modelSelect.querySelector('option[value="' + ev.model + '"]');
+        if (hasOpt) {
+          modelSelect.value = ev.model;
+          chrome.storage.sync.set({ model: ev.model });
+        }
       }
-    }
-    var msg = String(ev.message || '').trim();
-    if (msg) {
-      inputEl.value = msg;
-      // Tiny delay so the model switch UI updates first, then send.
-      setTimeout(function () { sendBtn.click(); }, 100);
-    }
+      var msg = String(ev.message || '').trim();
+      if (msg) {
+        inputEl.value = msg;
+        setTimeout(function () { sendBtn.click(); }, 100);
+      }
+    }, 250);
   }
 }
 
